@@ -24,12 +24,14 @@ parser.add_argument("-conf",
                     type=str,
                     default="../../../config.ini", help="pass config file")
 parser.add_argument("-reset_dir", type=bool, default=False, help="reset working dir")
+parser.add_argument("-run_mode", type=bool, default=False, help="pass running mode")
 args = parser.parse_args()
 
 config_file = args.conf
 config = ConfigObj(os.path.expanduser(config_file))
 
 reset_work_dir = args.reset_dir
+run_mode = args.run_mode
 
 working_dir = os.path.join(config['main_repo_path'],
                            'output_data/01_initial_state')
@@ -41,12 +43,18 @@ sys.path.append(config['main_repo_path'])
 from tools.plots import plot_different_spinup_results
 
 ## OGGM configuration Params
+# Use multiprocessing
+if run_mode:
+    cfg.PARAMS['use_multiprocessing'] = False
+else:
+    # ONLY IN THE CLUSTER!
+    cfg.PARAMS['use_multiprocessing'] = True
+    cfg.PARAMS['mp_processes'] = 20
+
 cfg.initialize(logging_level='ERROR')
 cfg.PATHS['working_dir'] = utils.mkdir(working_dir, reset=True)
 print(cfg.PATHS['working_dir'])
 cfg.PARAMS['border'] = 80
-cfg.PARAMS['use_multiprocessing'] = False
-#cfg.PARAMS['mp_processes'] =
 cfg.PARAMS['continue_on_error'] = True
 cfg.PARAMS['use_compression'] = True
 cfg.PARAMS['use_tar_shapefiles'] = True
@@ -81,10 +89,17 @@ if not os.path.exists(path_ids):
 
 print('Done')
 
-hint = rof[rof.Name == 'Hintereisferner']
+if run_mode:
+    selection = rof[rof.Name == 'Hintereisferner']
+else:
+    list_id_sel = ['RGI60-11.00719', 'RGI60-11.00787', 'RGI60-11.00897',
+                   'RGI60-11.00666', 'RGI60-11.00687', 'RGI60-11.00746',
+                   'RGI60-11.00846']
+    keep_indexes = [(i in list_id_sel) for i in rof.RGIId]
+    selection = rof[keep_indexes]
 
 
-gdirs = workflow.init_glacier_directories(hint,
+gdirs = workflow.init_glacier_directories(selection,
                                           from_prepro_level=3,
                                           prepro_base_url=base_url,
                                           reset=reset_work_dir)
