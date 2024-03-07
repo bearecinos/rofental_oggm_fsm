@@ -32,6 +32,8 @@ config = ConfigObj(os.path.expanduser(config_file))
 
 reset_work_dir = args.reset_dir
 run_mode = args.run_mode
+print('Runmode is', run_mode)
+print('reset the work dir', reset_work_dir)
 
 working_dir = os.path.join(config['main_repo_path'],
                            'output_data/01_initial_state')
@@ -43,18 +45,15 @@ sys.path.append(config['main_repo_path'])
 from tools.plots import plot_different_spinup_results
 
 ## OGGM configuration Params
-# Use multiprocessing
-if run_mode:
-    cfg.PARAMS['use_multiprocessing'] = False
-else:
-    # ONLY IN THE CLUSTER!
-    cfg.PARAMS['use_multiprocessing'] = True
-    cfg.PARAMS['mp_processes'] = 20
-
 cfg.initialize(logging_level='ERROR')
 cfg.PATHS['working_dir'] = utils.mkdir(working_dir, reset=True)
 print(cfg.PATHS['working_dir'])
 cfg.PARAMS['border'] = 80
+if run_mode:
+    cfg.PARAMS['use_multiprocessing'] = False
+else:
+    cfg.PARAMS['use_multiprocessing'] = True
+    cfg.PARAMS['mp_processes'] = 16
 cfg.PARAMS['continue_on_error'] = True
 cfg.PARAMS['use_compression'] = True
 cfg.PARAMS['use_tar_shapefiles'] = True
@@ -190,7 +189,8 @@ for ssp in ['ssp126', 'ssp370','ssp585']:
 # Now run the simulations with hydro output!
 for ssp in ['ssp126', 'ssp370', 'ssp585']:
     rid = f'_ISIMIP3b_{member}_{ssp}'
-    workflow.execute_entity_task(tasks.run_with_hydro, gdir,
+    workflow.execute_entity_task(tasks.run_with_hydro, 
+                                 gdirs,
                                  run_task=tasks.run_from_climate_data,
                                  store_monthly_hydro=True,
                                  # use gcm_data, not climate_historical
