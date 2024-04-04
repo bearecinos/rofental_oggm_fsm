@@ -12,6 +12,7 @@ import xarray as xr
 
 # Time
 import time
+import glob
 start = time.time()
 
 import oggm
@@ -37,18 +38,15 @@ working_dir = os.path.join(config['main_repo_path'],
 sys.path.append(config['main_repo_path'])
 
 ## OGGM configuration Params
-# Use multiprocessing
-if run_mode:
-    cfg.PARAMS['use_multiprocessing'] = False
-else:
-    # ONLY IN THE CLUSTER!
-    cfg.PARAMS['use_multiprocessing'] = True
-    cfg.PARAMS['mp_processes'] = 20
-
 cfg.initialize(logging_level='ERROR')
 cfg.PATHS['working_dir'] = utils.mkdir(working_dir)
 print(cfg.PATHS['working_dir'])
 cfg.PARAMS['border'] = 80
+if run_mode:
+    cfg.PARAMS['use_multiprocessing'] = False
+else:
+    cfg.PARAMS['use_multiprocessing'] = True
+    cfg.PARAMS['mp_processes'] = 16
 cfg.PARAMS['continue_on_error'] = True
 cfg.PARAMS['use_compression'] = True
 cfg.PARAMS['use_tar_shapefiles'] = True
@@ -95,4 +93,24 @@ for ssp in ['ssp126', 'ssp370', 'ssp585']:
     workflow.execute_entity_task(distribute_2d.distribute_thickness_from_simulation,
                                  gdirs,
                                  input_filesuffix=rid)
+
+for ssp in ['ssp126', 'ssp370', 'ssp585']:
+    rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
+    distribute_2d.merge_simulated_thickness(gdirs,
+                                            output_folder=working_dir,
+                                            output_filename='all_merged_for_'+ ssp,
+                                            add_topography=True,
+                                            keep_dem_file=True,
+                                            simulation_filesuffix=rid)
+
+    # Now we merge all those together per scenario
+    merged_files = sorted(glob.glob(os.path.join(working_dir,
+                                                 "all_merged_for_"+ssp+"_*.0.nc")))
+
+    f_path = os.path.join(working_dir, "all_simulations_merged_for_"+ssp+".nc")
+
+    with xr.open_mfdataset(merged_files) as ds:
+        final_d = ds.load()
+
+    final_d.to_netcdf(f_path)
 
