@@ -33,7 +33,7 @@ run_mode = args.run_mode
 config = ConfigObj(os.path.expanduser(config_file))
 
 working_dir = os.path.join(config['main_repo_path'],
-                           'output_data/01_initial_state')
+                           'output_data/02_all_rofental')
 
 sys.path.append(config['main_repo_path'])
 
@@ -71,11 +71,11 @@ rof = rof.sort_values('Area', ascending=False)
 if run_mode:
     selection = rof[rof.Name == 'Hintereisferner']
 else:
-    list_id_sel = ['RGI60-11.00719', 'RGI60-11.00787', 'RGI60-11.00897',
-                   'RGI60-11.00666', 'RGI60-11.00687', 'RGI60-11.00746',
-                   'RGI60-11.00846']
-    keep_indexes = [(i in list_id_sel) for i in rof.RGIId]
+    # Remove one error:
+    list_id_sel = ['RGI60-11.00439']
+    keep_indexes = [(i not in list_id_sel) for i in rof.RGIId]
     selection = rof[keep_indexes]
+    print('Running this many glaciers', len(selection))
 
 # TODO see if it is best to re-start directories from tar files
 # More information is here : https://oggm.org/tutorials/
@@ -96,18 +96,21 @@ for ssp in ['ssp126', 'ssp370', 'ssp585']:
 
 for ssp in ['ssp126', 'ssp370', 'ssp585']:
     rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
+
+    path_for_distributed_data = os.path.join(working_dir,
+                                             'distributed_data' + ssp)
     distribute_2d.merge_simulated_thickness(gdirs,
-                                            output_folder=working_dir,
-                                            output_filename='all_merged_for_'+ ssp,
+                                            output_folder=path_for_distributed_data,
+                                            output_filename='all_merged_for_' + ssp,
                                             add_topography=True,
                                             keep_dem_file=True,
                                             simulation_filesuffix=rid)
 
     # Now we merge all those together per scenario
-    merged_files = sorted(glob.glob(os.path.join(working_dir,
-                                                 "all_merged_for_"+ssp+"_*.0.nc")))
+    merged_files = sorted(glob.glob(os.path.join(path_for_distributed_data,
+                                                 "all_merged_for_" + ssp + "_*.0.nc")))
 
-    f_path = os.path.join(working_dir, "all_simulations_merged_for_"+ssp+".nc")
+    f_path = os.path.join(path_for_distributed_data, "all_simulations_merged_for_" + ssp + ".nc")
 
     with xr.open_mfdataset(merged_files) as ds:
         final_d = ds.load()
