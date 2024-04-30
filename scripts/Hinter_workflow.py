@@ -36,7 +36,7 @@ print('Runmode is', run_mode)
 print('reset the work dir', reset_work_dir)
 
 working_dir = os.path.join(config['main_repo_path'],
-                           'output_data/01_initial_state')
+                           'output_data/02_all_rofental')
 
 base_url = ('https://cluster.klima.uni-bremen.de/~oggm/'
             'gdirs/oggm_v1.6/L3-L5_files/2023.1/elev_bands/W5E5_w_data/')
@@ -91,11 +91,11 @@ print('Done')
 if run_mode:
     selection = rof[rof.Name == 'Hintereisferner']
 else:
-    list_id_sel = ['RGI60-11.00719', 'RGI60-11.00787', 'RGI60-11.00897',
-                   'RGI60-11.00666', 'RGI60-11.00687', 'RGI60-11.00746',
-                   'RGI60-11.00846']
-    keep_indexes = [(i in list_id_sel) for i in rof.RGIId]
-    selection = rof[keep_indexes]
+    # list_id_sel = ['RGI60-11.00719', 'RGI60-11.00787', 'RGI60-11.00897',
+    #                'RGI60-11.00666', 'RGI60-11.00687', 'RGI60-11.00746',
+    #                'RGI60-11.00846']
+    # keep_indexes = [(i in list_id_sel) for i in rof.RGIId]
+    selection = rof
 
 
 gdirs = workflow.init_glacier_directories(selection,
@@ -168,8 +168,8 @@ workflow.execute_entity_task(tasks.run_dynamic_melt_f_calibration,
                              output_filesuffix='_dynamic_melt_f')
 
 # Plot spinup results
-for gdir in gdirs:
-    plot_different_spinup_results(gdir, save_analysis_text=True)
+# for gdir in gdirs:
+#     plot_different_spinup_results(gdir, save_analysis_text=True)
 
 
 # Download GCM data
