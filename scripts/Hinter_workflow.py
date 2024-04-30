@@ -25,6 +25,8 @@ parser.add_argument("-conf",
                     default="../../../config.ini", help="pass config file")
 parser.add_argument("-reset_dir", type=bool, default=False, help="reset working dir")
 parser.add_argument("-run_mode", type=bool, default=False, help="pass running mode")
+parser.add_argument("-run_spinup_errs", type=bool, default=False,
+                    help="pass run only spinup errors with different method")
 args = parser.parse_args()
 
 config_file = args.conf
@@ -32,8 +34,11 @@ config = ConfigObj(os.path.expanduser(config_file))
 
 reset_work_dir = args.reset_dir
 run_mode = args.run_mode
+run_spinup_errs = args.run_spinup_errs
+
 print('Runmode is', run_mode)
 print('reset the work dir', reset_work_dir)
+print('We are only running spinup method', run_spinup_errs)
 
 working_dir = os.path.join(config['main_repo_path'],
                            'output_data/02_all_rofental')
@@ -46,7 +51,7 @@ from tools.plots import plot_different_spinup_results
 
 ## OGGM configuration Params
 cfg.initialize(logging_level='ERROR')
-cfg.PATHS['working_dir'] = utils.mkdir(working_dir, reset=True)
+cfg.PATHS['working_dir'] = utils.mkdir(working_dir, reset=reset_work_dir)
 print(cfg.PATHS['working_dir'])
 cfg.PARAMS['border'] = 80
 if run_mode:
@@ -90,11 +95,16 @@ print('Done')
 
 if run_mode:
     selection = rof[rof.Name == 'Hintereisferner']
+if run_spinup_errs:
+    # Re-run spinup errors
+    list_id_sel = ['RGI60-11.00387', 'RGI60-11.00517', 'RGI60-11.00573', 'RGI60-11.00605', 'RGI60-11.00650',
+                   'RGI60-11.00706', 'RGI60-11.00877', 'RGI60-11.00395', 'RGI60-11.00527', 'RGI60-11.00575',
+                   'RGI60-11.00641', 'RGI60-11.00667', 'RGI60-11.00839', 'RGI60-11.00996', 'RGI60-11.00571',
+                   'RGI60-11.00594', 'RGI60-11.00642', 'RGI60-11.00676', 'RGI60-11.00875', 'RGI60-11.01040']
+
+    keep_indexes = [(i in list_id_sel) for i in rof.RGIId]
+    selection = rof[keep_indexes]
 else:
-    # list_id_sel = ['RGI60-11.00719', 'RGI60-11.00787', 'RGI60-11.00897',
-    #                'RGI60-11.00666', 'RGI60-11.00687', 'RGI60-11.00746',
-    #                'RGI60-11.00846']
-    # keep_indexes = [(i in list_id_sel) for i in rof.RGIId]
     selection = rof
 
 
@@ -103,6 +113,7 @@ gdirs = workflow.init_glacier_directories(selection,
                                           prepro_base_url=base_url,
                                           reset=reset_work_dir)
 
+exit() # to remove after testing
 # Tested tasks
 task_list = [
     tasks.compute_downstream_line,
@@ -189,19 +200,35 @@ for ssp in ['ssp126', 'ssp370','ssp585']:
 # Now run the simulations with hydro output!
 for ssp in ['ssp126', 'ssp370', 'ssp585']:
     rid = f'_ISIMIP3b_{member}_{ssp}'
-    workflow.execute_entity_task(tasks.run_with_hydro, 
-                                 gdirs,
-                                 run_task=tasks.run_from_climate_data,
-                                 store_monthly_hydro=True,
-                                 # use gcm_data, not climate_historical
-                                 climate_filename='gcm_data',
-                                 # use the chosen scenario
-                                 climate_input_filesuffix=rid,
-                                 # this is important! Start from 2020 glacier
-                                 init_model_filesuffix='_dynamic_melt_f',
-                                 # recognize the run for later,
-                                 output_filesuffix=rid,
-                                 store_fl_diagnostics=True)
+
+    if run_spinup_errs:
+        workflow.execute_entity_task(tasks.run_with_hydro,
+                                     gdirs,
+                                     run_task=tasks.run_from_climate_data,
+                                     store_monthly_hydro=True,
+                                     # use gcm_data, not climate_historical
+                                     climate_filename='gcm_data',
+                                     # use the chosen scenario
+                                     climate_input_filesuffix=rid,
+                                     # this is important! Start from 2020 glacier
+                                     init_model_filesuffix='_spinup_dynamic_volume',
+                                     # recognize the run for later,
+                                     output_filesuffix=rid,
+                                     store_fl_diagnostics=True)
+    else:
+        workflow.execute_entity_task(tasks.run_with_hydro,
+                                     gdirs,
+                                     run_task=tasks.run_from_climate_data,
+                                     store_monthly_hydro=True,
+                                     # use gcm_data, not climate_historical
+                                     climate_filename='gcm_data',
+                                     # use the chosen scenario
+                                     climate_input_filesuffix=rid,
+                                     # this is important! Start from 2020 glacier
+                                     init_model_filesuffix='_dynamic_melt_f',
+                                     # recognize the run for later,
+                                     output_filesuffix=rid,
+                                     store_fl_diagnostics=True)
 
 if len(gdirs) < 2:
     for gdir in gdirs:
