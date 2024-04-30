@@ -113,7 +113,6 @@ gdirs = workflow.init_glacier_directories(selection,
                                           prepro_base_url=base_url,
                                           reset=reset_work_dir)
 
-exit() # to remove after testing
 # Tested tasks
 task_list = [
     tasks.compute_downstream_line,
