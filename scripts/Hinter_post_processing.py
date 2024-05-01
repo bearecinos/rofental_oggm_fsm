@@ -84,32 +84,38 @@ else:
 
 gdirs = workflow.init_glacier_directories(selection)
 
+
 if len(gdirs) < 2:
     for gdir in gdirs:
         print(os.listdir(gdir.dir))
 
-for ssp in ['ssp126', 'ssp370', 'ssp585']:
-    rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
-    workflow.execute_entity_task(distribute_2d.distribute_thickness_from_simulation,
-                                 gdirs,
-                                 input_filesuffix=rid)
+#for ssp in ['ssp126', 'ssp370', 'ssp585']:
+#    rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
+#    workflow.execute_entity_task(distribute_2d.add_smoothed_glacier_topo, gdirs)
+#    workflow.execute_entity_task(distribute_2d.assign_points_to_band, gdirs)
+#    workflow.execute_entity_task(distribute_2d.distribute_thickness_from_simulation,
+#                                 gdirs,
+#                                 input_filesuffix=rid)
+
+from IPython import embed
 
 for ssp in ['ssp126', 'ssp370', 'ssp585']:
     rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
 
     path_for_distributed_data = os.path.join(working_dir,
                                              'distributed_data' + ssp)
-    distribute_2d.merge_simulated_thickness(gdirs,
-                                            output_folder=path_for_distributed_data,
-                                            output_filename='all_merged_for_' + ssp,
-                                            add_topography=True,
-                                            keep_dem_file=True,
-                                            simulation_filesuffix=rid)
+    #distribute_2d.merge_simulated_thickness(gdirs,
+    #                                        output_folder=path_for_distributed_data,
+    #                                        output_filename='all_merged_for_' + ssp,
+    #                                        add_topography=True,
+    #                                        keep_dem_file=True,
+    #                                        use_multiprocessing=True,
+    #                                        simulation_filesuffix=rid)
 
     # Now we merge all those together per scenario
     merged_files = sorted(glob.glob(os.path.join(path_for_distributed_data,
-                                                 "all_merged_for_" + ssp + "_*.0.nc")))
-
+                                                 "all_merged_for_" + ssp + "_*_01.nc")))
+    embed()
     f_path = os.path.join(path_for_distributed_data, "all_simulations_merged_for_" + ssp + ".nc")
 
     with xr.open_mfdataset(merged_files) as ds:
