@@ -232,6 +232,13 @@ df_new['area_perc_in_coarse'] = aggregated_area_perc
 
 df_new['area_perc_in_coarse'].attrs = {'long_name': '% of glaciated area coverage on the coarse grid'}
 
+# We almost forgot to write the right projection!
+df_new.attrs['pyproj_srs'] = grid_coarse_sub.proj.srs
+
+# All variable needs this to be plotted with salem!
+for v in df_new.variables:
+    df_new[v].attrs['pyproj_srs'] = grid_coarse_sub.proj.srs
+
 # Delete the intermediate file and save the complete one
 os.remove(netcdf_fp)
 df_new.to_netcdf(netcdf_fp)
