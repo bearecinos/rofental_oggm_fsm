@@ -132,12 +132,10 @@ x_oggm_plot, y_oggm_plot = np.meshgrid(new_oggm_x, new_oggm_y)
 # Create array to store interpolated data
 new_thickness = np.zeros(df_oggm.simulated_thickness.data.shape)
 
-new_thickness = new_thickness[0:4, :, :]
-
 # PARALLELIZATION OF GRIDDATA!
 # We need to know how many years there are in the simulation
 # to divide the cpus accordingly for the interpolation
-years = df_oggm.time[0:4].values.astype(int)
+years = df_oggm.time.values.astype(int)
 no_yrs = len(years)
 
 dfs = [df_oggm.simulated_thickness.sel(time=year) for year in years]
@@ -179,7 +177,7 @@ print('Data will be stored here', netcdf_fp)
 with utils.ncDataset(netcdf_fp, 'w', format='NETCDF4') as nc:
     nc.createDimension('x', len(new_oggm_x))
     nc.createDimension('y', len(new_oggm_y))
-    nc.createDimension('time', len(df_oggm.time[0:4].values))
+    nc.createDimension('time', len(df_oggm.time.values))
 
     v = nc.createVariable('x', 'f4', ('x',), zlib=True)
     v.units = 'm'
@@ -195,7 +193,7 @@ with utils.ncDataset(netcdf_fp, 'w', format='NETCDF4') as nc:
 
     v = nc.createVariable('time', 'f4', ('time',), zlib=True)
     v.units = 'years'
-    v[:] = df_oggm.time[0:4].values
+    v[:] = df_oggm.time.values
 
     vn = "simulated_thickness"
     v = nc.createVariable(vn, 'f4', ('time', 'y', 'x',), zlib=True)
