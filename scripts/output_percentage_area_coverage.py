@@ -137,6 +137,7 @@ new_thickness = np.zeros(df_oggm.simulated_thickness.data.shape)
 # to divide the cpus accordingly for the interpolation
 years = df_oggm.time.values.astype(int)
 no_yrs = len(years)
+print('this many years', no_yrs)
 
 dfs = [df_oggm.simulated_thickness.sel(time=year) for year in years]
 
@@ -147,15 +148,16 @@ y_ori = np.concatenate([[y_oggm_proj]] * no_yrs, axis=0)
 x_to_int = np.concatenate([[x_oggm_plot]] * no_yrs, axis=0)
 y_to_int = np.concatenate([[y_oggm_plot]] * no_yrs, axis=0)
 
-result = []
+result = np.zeros(new_thickness.shape)
+
+print('We are here')
+import multiprocessing
 
 if __name__ == '__main__':
-    no_of_cpus = no_yrs / 2
-    p = ThreadPool(int(no_of_cpus))
-    result = p.starmap(interp_with_griddata, zip(dfs, x_ori, y_ori, x_to_int, y_to_int))
-
-    p.close()
-    p.join()
+    with multiprocessing.Pool(processes=20) as pool:
+        result = pool.starmap(interp_with_griddata, zip(dfs, x_ori, y_ori, x_to_int, y_to_int))
+        pool.close()
+        pool.join()
 
 for i, array in enumerate(result):
     print(array.shape)

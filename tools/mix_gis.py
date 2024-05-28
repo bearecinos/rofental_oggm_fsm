@@ -15,6 +15,7 @@ def interp_with_griddata(h_year, x_ori, y_ori, x_to_int, y_to_int):
     h_new = griddata((np.ravel(x_ori), np.ravel(y_ori)),
                      np.ravel(h_year), (x_to_int, y_to_int),
                      method='linear')
+    print('another year is finish!')
 
     return h_new
 
