@@ -1,12 +1,13 @@
 import logging
 import numpy as np
-import netCDF4
+import pickle
 from scipy.interpolate import griddata
 
 # Module logger
 log = logging.getLogger(__name__)
 
-def interp_with_griddata(h_year, x_ori, y_ori, x_to_int, y_to_int):
+def interp_with_griddata_and_pkl(h_year, x_ori, y_ori, x_to_int, y_to_int,
+                                year, file_name, return_data_set=False):
     """
     Wrapper for scipy.interpolate.griddata
     """
@@ -17,5 +18,10 @@ def interp_with_griddata(h_year, x_ori, y_ori, x_to_int, y_to_int):
                      method='linear')
     print('another year is finish!')
 
-    return h_new
+    data = {'simulated_thickness': h_new, 'year': year}
 
+    with open(file_name, 'wb') as f:
+        pickle.dump(data, f)
+
+    if return_data_set:
+        return h_new

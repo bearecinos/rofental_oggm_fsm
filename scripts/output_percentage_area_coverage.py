@@ -24,8 +24,8 @@ import xarray as xr
 import salem
 from pyproj import Transformer
 import numpy as np
-from multiprocessing.dummy import Pool as ThreadPool
 from oggm import utils
+import pickle
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ simulation_index = args.simulation_index
 config = ConfigObj(os.path.expanduser(config_file))
 
 sys.path.append(config['main_repo_path'])
-from tools.mix_gis import interp_with_griddata
+from tools.mix_gis import interp_with_griddata_and_pkl
 
 working_dir = os.path.join(config['main_repo_path'],
                            'output_data/02_all_rofental')
@@ -148,22 +148,6 @@ y_ori = np.concatenate([[y_oggm_proj]] * no_yrs, axis=0)
 x_to_int = np.concatenate([[x_oggm_plot]] * no_yrs, axis=0)
 y_to_int = np.concatenate([[y_oggm_plot]] * no_yrs, axis=0)
 
-result = np.zeros(new_thickness.shape)
-
-print('We are here')
-import multiprocessing
-
-if __name__ == '__main__':
-    with multiprocessing.Pool(processes=20) as pool:
-        result = pool.starmap(interp_with_griddata, zip(dfs, x_ori, y_ori, x_to_int, y_to_int))
-        pool.close()
-        pool.join()
-
-for i, array in enumerate(result):
-    print(array.shape)
-    print(i)
-    new_thickness[i, :, :] = array
-
 # Let's make a directory for CEH data and file formats
 output_dir = os.path.join(config['main_repo_path'],
                           'output_data/03_data_for_CEH')
@@ -173,6 +157,31 @@ if not os.path.exists(output_dir):
 
 filename, ext = os.path.splitext(os.path.basename(oggm_data_fp[simulation_index]))
 filename_f = filename + '_projected_and_aggregated' + ext
+
+file_names = []
+for y in years:
+    file_names.append(os.path.join(output_dir, filename + '_projected_' + str(y) + '.pkl'))
+
+print('We are here')
+import multiprocessing
+
+if __name__ == '__main__':
+    with multiprocessing.Pool(processes=20) as pool:
+        result = pool.starmap(interp_with_griddata_and_pkl, zip(dfs,
+                                                                x_ori, y_ori,
+                                                                x_to_int, y_to_int,
+                                                                years, file_names))
+        pool.close()
+        pool.join()
+
+i = np.arange(len(file_names))
+
+for y, f, i in zip(years, file_names, i):
+    with open(f, 'rb') as fp:
+        data = pickle.load(fp)
+        assert data['year'] == y
+        new_thickness[i, :, :] = data['simulated_thickness']
+
 netcdf_fp = os.path.join(output_dir, filename_f)
 print('Data will be stored here', netcdf_fp)
 
