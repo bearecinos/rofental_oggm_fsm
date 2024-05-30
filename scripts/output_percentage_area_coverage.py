@@ -166,7 +166,7 @@ print('We are here')
 import multiprocessing
 
 if __name__ == '__main__':
-    with multiprocessing.Pool(processes=20) as pool:
+    with multiprocessing.Pool(processes=4) as pool:
         result = pool.starmap(interp_with_griddata_and_pkl, zip(dfs,
                                                                 x_ori, y_ori,
                                                                 x_to_int, y_to_int,
@@ -251,3 +251,4 @@ for v in df_new.variables:
 # Delete the intermediate file and save the complete one
 os.remove(netcdf_fp)
 df_new.to_netcdf(netcdf_fp)
+
