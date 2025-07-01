@@ -89,13 +89,13 @@ if len(gdirs) < 2:
         print(os.listdir(gdir.dir))
 
 ## TODO: this has to be un comment before final commit!
-#for ssp in ['ssp126', 'ssp370', 'ssp585']:
-#    rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
-#    workflow.execute_entity_task(distribute_2d.add_smoothed_glacier_topo, gdirs)
-#    workflow.execute_entity_task(distribute_2d.assign_points_to_band, gdirs)
-#    workflow.execute_entity_task(distribute_2d.distribute_thickness_from_simulation,
-#                                 gdirs,
-#                                 input_filesuffix=rid)
+for ssp in ['ssp126', 'ssp370', 'ssp585']:
+   rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
+   workflow.execute_entity_task(distribute_2d.add_smoothed_glacier_topo, gdirs)
+   workflow.execute_entity_task(distribute_2d.assign_points_to_band, gdirs)
+   workflow.execute_entity_task(distribute_2d.distribute_thickness_from_simulation,
+                                gdirs,
+                                input_filesuffix=rid)
 
 for ssp in ['ssp126', 'ssp370', 'ssp585']:
     rid = '_ISIMIP3b_mri-esm2-0_r1i1p1f1_' + ssp
