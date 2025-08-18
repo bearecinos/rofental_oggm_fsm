@@ -4,3 +4,6 @@ output_data
 plots
 .idea
 tools/__pycache__/
+slurm_scripts_rof/*.err
+slurm_scripts_rof/*.out
+nlst
