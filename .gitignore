@@ -1,9 +1,11 @@
 dev_notebooks
-input_data
-output_data
+input
+output
 plots
 .idea
 tools/__pycache__/
 slurm_scripts_rof/*.err
 slurm_scripts_rof/*.out
+scripts/rofental_workflow_FSM_OGGM/slurm_log.err
+scripts/rofental_workflow_FSM_OGGM/slurm_log.out
 nlst
