@@ -23,7 +23,9 @@ export PYTHONPATH="/exports/csce/datastore/geos/users/brecinos/FSM-OGGM:$PYTHONP
 CONFIG="$SCRIPT_DIR/params.ini"
 
 # Now call each Python script with that one argument:
-python test_fsm_rofental_new.py "$CONFIG"
+#python test_fsm_rofental_new.py "$CONFIG"
+python output_distributed_thickness_and_runoff.py "$CONFIG"
+
 
 #python test_fsm_rofental.py $(<params.txt)
 #python output_distributed_thickness_and_runoff.py $(<params.txt)
