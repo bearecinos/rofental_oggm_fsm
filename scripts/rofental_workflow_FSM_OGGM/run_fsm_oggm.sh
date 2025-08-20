@@ -9,7 +9,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16  # Adjust CPU allocation if needed
 #SBATCH --mail-type=ALL  # Notifications for job begin, end, and failure
-#SBATCH --mail-user=beatriz.recinos@ed.ac.uk # Email for notifications
+#SBATCH --mail-user= # Email for notifications
 
 # Load necessary modules (if required)
 source ~/.bashrc
@@ -17,12 +17,16 @@ mamba activate oggm_fsm
 
 SCRIPT_DIR="$(pwd)"
 ROOT_DIR="$(realpath "$SCRIPT_DIR/..")"
-export PYTHONPATH="/exports/csce/datastore/geos/users/brecinos/FSM-OGGM:$PYTHONPATH"
+# define your project root in one place
+export FSM_OGGM_ROOT="../../FSM-OGGM"
+
+# then use it wherever you need
+export PYTHONPATH="$FSM_OGGM_ROOT:$PYTHONPATH"
 
 # Path to your single config file
 CONFIG="$SCRIPT_DIR/params.ini"
 
 # Now call each Python script with that one argument:
-#python test_fsm_rofental_new.py "$CONFIG"
-#python output_distributed_thickness_and_runoff.py "$CONFIG"
-python output_terminus_position_to_runoff_file.py "$CONFIG"
+python test_fsm_rofental_new.py "$CONFIG"
+python output_distributed_thickness_and_runoff.py "$CONFIG"
+#python output_terminus_position_to_runoff_file.py "$CONFIG" Not completed!
