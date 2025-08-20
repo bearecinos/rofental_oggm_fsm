@@ -1,5 +1,6 @@
 from __future__ import division
-import argparse
+import sys
+import configparser
 import logging
 import os
 import glob
@@ -96,45 +97,61 @@ def extract_terminus_position_per_year(topo_year,
         return dfinal
 
 ## Define main function
-def main(args):
+def main(cfg_path):
+    # 1) Read configuration file
+    cp = configparser.ConfigParser()
+    cp.read(cfg_path)
+    gen  = cp['General']
+    oggm = cp['OGGM']
+    fsm  = cp['FSM_OGGM']
+    inp  = cp['InputData']
+    outp = cp['Output']
+
+    # 2) General settings
+    working_dir = gen.get('working_dir')
+    reset       = gen.getboolean('reset')
+    # We force reset=False here since this is pure post-processing
     reset = False
 
+    # 3) Initialize OGGM
     cfg.initialize(logging_level='DEBUG')
+    cfg.PATHS['working_dir'] = utils.mkdir(working_dir, reset=reset)
+    print(f"Working directory: {cfg.PATHS['working_dir']}")
+    print("Reset forced to False for post-processing")
 
-    # Configure parameters from arguments
-    cfg.PARAMS['use_multiprocessing'] = args.use_multiprocessing
-    cfg.PARAMS['mp_processes'] = args.mp_processes
-    cfg.PARAMS['border'] = 80
+    # 4) OGGM core params
+    cfg.PARAMS['use_multiprocessing'] = True
+    cfg.PARAMS['mp_processes']        = oggm.getint('mp_processes')
+    cfg.PARAMS['border']              = oggm.getint('border', fallback=80)
 
-    print('Reset is set to ', reset)
-    print('**Important set this to False to avoid '
-          'resetting the glacier directory everytime this is ran!**')
+    # 5) FSM parameters (only those relevant to post-processing)
+    cfg.PARAMS['FSM_save_runoff']      = fsm.getboolean('FSM_save_runoff')
+    cfg.PARAMS['FSM_runoff_frequency'] = fsm.get('FSM_runoff_frequency')
+    # (the rest of the FSM params are only used during runs)
 
-    # this sets a temporary working directory. if you want to use a permanent
-    # directory then uncomment and adapt the following line.
-    cfg.PATHS['working_dir'] = utils.mkdir(args.working_dir)
-    # cfg.PATHS['working_dir'] = '/exports/geos.ed.ac.uk/iceocean/dgoldber/FSM-OGGM'
-    print('we are working here', cfg.PATHS['working_dir'])
-
-    cfg.PARAMS['continue_on_error'] = True
-    cfg.PARAMS['use_compression'] = True
-    cfg.PARAMS['use_tar_shapefiles'] = True
-    cfg.PATHS['rgi_version'] = '62'
+    # 6) Standard OGGM flags
+    cfg.PARAMS['continue_on_error']       = True
+    cfg.PARAMS['use_compression']         = True
+    cfg.PARAMS['use_tar_shapefiles']      = True
+    cfg.PATHS['rgi_version']              = '62'
     cfg.PARAMS['use_temp_bias_from_file'] = True
     cfg.PARAMS['compress_climate_netcdf'] = False
-    cfg.PARAMS['store_model_geometry'] = True
-    cfg.PARAMS['store_fl_diagnostics'] = True
+    cfg.PARAMS['store_model_geometry']    = True
+    cfg.PARAMS['store_fl_diagnostics']    = True
 
-    fr = utils.get_rgi_region_file(11, version='62', reset=False)
+    # 7) Define FSM_runoff basename
+    _doc = ("A netcdf file containing dates and "
+            "ice-based and snow-based runoff volume for each date interval")
+    cfg.BASENAMES['FSM_runoff'] = ('FSM_runoff.nc', _doc)
+
+    # 8) Load RGI regions & catchment polygon
+    fr  = utils.get_rgi_region_file(11, version='62', reset=False)
     gdf = gpd.read_file(fr)
 
-    catchment_path = args.catchment_path
-    rof_shp = gpd.read_file(catchment_path)
+    catchment = gpd.read_file(inp.get('catchment_path'))
+    rof_sel = gdf.clip(catchment).sort_values('Area', ascending=False)
 
-    rof_sel = gdf.clip(rof_shp)
-    rof_sel = rof_sel.sort_values('Area', ascending=False)
-
-    rgi_id = args.glacier_rgi_id
+    rgi_id = inp.get('glacier_rgi_id')
     if rgi_id in ('None', '', None):
         rgi_id = None
 
@@ -166,7 +183,6 @@ def main(args):
 
         # Remove from gdirs those that dont have thickness distribution due to errors
 
-
         write_centerlines_to_shape(gdirs,  # The glaciers to process
                                    path=shp_path,  # The output file
                                    to_tar=False,  # set to True to put everything into one single tar file
@@ -184,17 +200,22 @@ def main(args):
     centerlines = gpd.read_file(os.path.join(output_dir, 'Rofental_Centerlines.shp'))
     centerlines['coords'] = centerlines.geometry.apply(lambda geom: list(geom.coords))
 
-    simulation_name = args.simulation_name
+    # ----------------------
+    # 10) Final 2D distribution
+    # ----------------------
+    simulation_name = outp.get('simulation_name')
 
-    pattern = os.path.join(cfg.PATHS['working_dir'], 'distributed_data'+ simulation_name, "*all_simulations_merged*")
-    
-
+    pattern = os.path.join(cfg.PATHS['working_dir'],
+                           'distributed_data' + simulation_name,
+                           "*all_simulations_merged*")
 
     matched_files = sorted(glob.glob(pattern))
 
-    topo_file_pattern = os.path.join(cfg.PATHS['working_dir'], 'distributed_data' + simulation_name, "*topo*")
-    matched_dem = sorted(glob.glob(topo_file_pattern))
+    topo_file_pattern = os.path.join(cfg.PATHS['working_dir'],
+                                     'distributed_data' + simulation_name,
+                                     "*topo*")
 
+    matched_dem = sorted(glob.glob(topo_file_pattern))
 
     # We process a single simulation at the time
     # OGGM thickness
@@ -209,12 +230,12 @@ def main(args):
 
     # Let's prepare arrays to deploy in a multiprocessing workflow per year
     years = doggm.time.values.astype(int)
+
     dfs = []
     for year in years:
         mask = doggm.area_mask.sel(time=year)
         topo_masked = topo_smooth.where(mask == 1)
         dfs.append(topo_masked)
-    #dfs = [topo_smooth.where(doggm.area_mask.sel(time=year) == 1) for year in years]
 
     gpd_file = os.path.join(output_dir, 'Rofental_Centerlines.shp')
     geopandas_file = np.repeat(gpd_file, len(years))
@@ -229,58 +250,19 @@ def main(args):
         file_names.append(os.path.join(intermediate_files_dir,
                                        'terminus_tracking_' + str(y) + '_' + simulation_name + '.csv'))
 
-
-    print("Starting multiprocessing" if args.use_multiprocessing else "Running serial.")
-    if args.use_multiprocessing:
-        with multiprocessing.Pool(processes=args.mp_processes) as pool:
+    print("Starting multiprocessing" if cfg.PARAMS['use_multiprocessing'] else "Running serial.")
+    if cfg.PARAMS['use_multiprocessing']:
+        with multiprocessing.Pool(processes=cfg.PARAMS['mp_processes']) as pool:
             result = pool.starmap(extract_terminus_position_per_year, zip(dfs, geopandas_file, file_names))
             print(result)
     else:
         result = [extract_terminus_position_per_year(topo, gdf, fname)
                   for topo, gdf, fname in zip(dfs, geopandas_file, file_names)]
 
-    matching_files = []
-    for filename in os.listdir(output_dir):
-        if re.match('run_off_daily_and_terminus_position' + simulation_name, filename):
-            matching_files.append(filename)
-    print(matching_files)
-    file_to_change = os.path.join(output_dir, matching_files[0])
-
-    df_new = xr.open_dataset(file_to_change)
-
-    i = np.arange(len(years))
-
-    for year, file, t_index in zip(years, file_names, i):
-        df = pd.read_csv(file)
-
-        for rgiid in df_new.RGIID.values:
-            key = (str(rgiid), pd.Timestamp(f"{year}-01-01"))
-            if key in df.index:
-                dpg = df.loc['key']
-                df_new['lat'].loc[dict(time=t_index, RGIID=rgiid)] = dpg['lat'].values[0]
-                df_new['lon'].loc[dict(time=t_index, RGIID=rgiid)] = dpg['lon'].values[0]
-
-    os.remove(file_to_change)
-    df_new.to_netcdf(file_to_change)
-
-    #shutil.rmtree(intermediate_files_dir, ignore_errors=True)
+    print("Done outputting terminus position data")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run FSM OGGM model with customizable parameters')
-    parser.add_argument('--reset', type=bool, default=True)
-    parser.add_argument('--working_dir', type=str, default='')
-    parser.add_argument('--use_multiprocessing', type=bool, default=False)
-    parser.add_argument('--mp_processes', type=int, default=2)
-    parser.add_argument('--border', type=int, default=80)
-    parser.add_argument('--asm_x', type=float, default=0.85)
-    parser.add_argument('--nbnds', type=int, default=15)
-    parser.add_argument('--spinup', type=bool, default=True)
-    parser.add_argument('--climate_file', type=str, default='/exports/geos.ed.ac.uk/iceocean/WFDE5_rof/')
-    parser.add_argument('--glacier_rgi_id', type=str, default='')
-    parser.add_argument('--y0', type=int, default=1980)
-    parser.add_argument('--y1', type=int, default=2019)
-    parser.add_argument('--catchment_path', type=str, default='')
-    parser.add_argument('--simulation_name', type=str, default='')
-
-    args = parser.parse_args()
-    main(args)
+    if len(sys.argv) != 2:
+        print("Usage: python run_fsm.py <config.ini>")
+        sys.exit(1)
+    main(sys.argv[1])
