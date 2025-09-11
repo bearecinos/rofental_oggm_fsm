@@ -1,6 +1,10 @@
 dev_notebooks
-input_data
-output_data
+input
+output
 plots
 .idea
 tools/__pycache__/
+*_bea*
+*slurm_log.err*
+*slurm_log.out*
+*nlst*
