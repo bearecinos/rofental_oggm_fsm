@@ -271,7 +271,7 @@ def main(cfg_path):
 
     matching_files = []
     for filename in os.listdir(output_dir):
-        if re.match('run_off_daily_and_terminus_position' + simulation_name, filename):
+        if re.match('run_off_daily_and_terminus_position_' + simulation_name + '.nc', filename):
             matching_files.append(filename)
     print(matching_files)
     file_to_change = os.path.join(output_dir, matching_files[0])
