@@ -102,14 +102,14 @@ def main(cfg_path):
     # 1) Read configuration file
     cp = configparser.ConfigParser()
     cp.read(cfg_path)
-    gen  = cp['General']
-    oggm = cp['OGGM']
-    fsm  = cp['FSM_OGGM']
-    inp  = cp['InputData']
-    outp = cp['Output']
+    gen_config  = cp['General']
+    oggm_config = cp['OGGM']
+    fsm_config  = cp['FSM_OGGM']
+    inp_config  = cp['InputData']
+    outp_config = cp['Output']
 
     # 2) General settings
-    working_dir = gen.get('working_dir')
+    working_dir = gen_config.get('working_dir')
     # We force reset=False here since this is pure post-processing
     reset = False
 
@@ -120,13 +120,13 @@ def main(cfg_path):
     print("Reset forced to False for post-processing")
 
     # 4) OGGM core params
-    cfg.PARAMS['use_multiprocessing'] = oggm.getboolean('use_multiprocessing')
-    cfg.PARAMS['mp_processes']        = oggm.getint('mp_processes')
-    cfg.PARAMS['border']              = oggm.getint('border', fallback=80)
+    cfg.PARAMS['use_multiprocessing'] = oggm_config.getboolean('use_multiprocessing')
+    cfg.PARAMS['mp_processes']        = oggm_config.getint('mp_processes')
+    cfg.PARAMS['border']              = oggm_config.getint('border', fallback=80)
 
     # 5) FSM parameters (only those relevant to post-processing)
-    cfg.PARAMS['FSM_save_runoff']      = fsm.getboolean('FSM_save_runoff')
-    cfg.PARAMS['FSM_runoff_frequency'] = fsm.get('FSM_runoff_frequency')
+    cfg.PARAMS['FSM_save_runoff']      = fsm_config.getboolean('FSM_save_runoff')
+    cfg.PARAMS['FSM_runoff_frequency'] = fsm_config.get('FSM_runoff_frequency')
     # (the rest of the FSM params are only used during runs)
 
     # 6) Standard OGGM flags
@@ -148,12 +148,12 @@ def main(cfg_path):
     fr  = utils.get_rgi_region_file(11, version='62', reset=False)
     gdf = gpd.read_file(fr)
 
-    catchment_path = inp.get('catchment_path')
+    catchment_path = inp_config.get('catchment_path')
     rof_shp = gpd.read_file(catchment_path)
     rof_sel = gdf.clip(rof_shp)
     rof_sel = rof_sel.sort_values('Area', ascending=False)
 
-    rgi_id = inp.get('glacier_rgi_id')
+    rgi_id = inp_config.get('glacier_rgi_id')
     if rgi_id in ('None', '', None):
         rgi_id = None
 
@@ -205,7 +205,7 @@ def main(cfg_path):
     # ----------------------
     # 10) Final 2D distribution
     # ----------------------
-    simulation_name = outp.get('simulation_name')
+    simulation_name = outp_config.get('simulation_name')
 
     pattern = os.path.join(cfg.PATHS['working_dir'],
                            'distributed_data' + simulation_name,
@@ -251,8 +251,8 @@ def main(cfg_path):
     # DNG: the issue is that there is a file for ye+1, giving the dist thickness at the END 
     #      of ye. There are no ye+1 entries in the runoff file
 
-    if years[-1] > inp.getint('y1'):
-        years=years[:np.where(years==inp.getint('y1')+1)[0][0]]
+    if years[-1] > inp_config.getint('y1'):
+        years=years[:np.where(years==inp_config.getint('y1')+1)[0][0]]
 
     for y in years:
         file_names.append(os.path.join(intermediate_files_dir,

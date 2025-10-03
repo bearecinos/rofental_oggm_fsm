@@ -14,17 +14,17 @@ def main(cfg_path):
     cp = configparser.ConfigParser()
     cp.read(cfg_path)
 
-    gen  = cp['General']
-    oggm = cp['OGGM']
-    fsm  = cp['FSM_OGGM']
-    inp  = cp['InputData']
-    outp = cp['Output']
+    gen_config  = cp['General']
+    oggm_config = cp['OGGM']
+    fsm_config  = cp['FSM_OGGM']
+    inp_config  = cp['InputData']
+    outp_config = cp['Output']
 
     # ----------------------
     # 2) Parse general settings
     # ----------------------
-    working_dir = gen.get('working_dir')          # string, may be blank
-    reset       = gen.getboolean('reset')         # bool
+    working_dir = gen_config.get('working_dir')          # string, may be blank
+    reset       = gen_config.getboolean('reset')         # bool
 
     # ----------------------
     # 3) Initialize OGGM core
@@ -42,25 +42,26 @@ def main(cfg_path):
     # ----------------------
     # 4) OGGM parameters
     # ----------------------
-    cfg.PARAMS['use_multiprocessing'] = oggm.getboolean('use_multiprocessing')
-    cfg.PARAMS['mp_processes']        = oggm.getint('mp_processes')
-    cfg.PARAMS['border']              = oggm.getint('border', fallback=80)
+    cfg.PARAMS['use_multiprocessing'] = oggm_config.getboolean('use_multiprocessing')
+    cfg.PARAMS['mp_processes']        = oggm_config.getint('mp_processes')
+    cfg.PARAMS['border']              = oggm_config.getint('border', fallback=80)
 
     # ----------------------
     # 5) FSM parameters
     # ----------------------
-    cfg.PARAMS['FSM_save_runoff']        = fsm.getboolean('FSM_save_runoff')
-    cfg.PARAMS['FSM_runoff_frequency']   = fsm.get('FSM_runoff_frequency')
-    cfg.PARAMS['FSM_spinup']             = fsm.getboolean('FSM_spinup')
-    cfg.PARAMS['FSM_interpolate_bnds']   = fsm.getboolean('FSM_interpolate_bnds') # note: nbnds can only be set if interpolate_bnds is True
-    cfg.PARAMS['FSM_Nbnds']              = fsm.getint('FSM_Nbnds')
-    cfg.PARAMS['FSM_param_asmx']         = fsm.getfloat('FSM_param_asmx')
-    cfg.PARAMS['FSM_param_asmn']         = fsm.getfloat('FSM_param_asmn')
-    cfg.PARAMS['FSM_param_aice']         = fsm.getfloat('FSM_param_aice')
-    cfg.PARAMS['FSM_param_Plapse']       = fsm.getfloat('FSM_param_Plapse')
-    cfg.PARAMS['FSM_param_Pf']           = fsm.getfloat('FSM_param_Pf')
-    cfg.PARAMS['FSM_param_Tlapse']       = fsm.getfloat('FSM_param_Tlapse')
-    cfg.PARAMS['FSM_param_sigmoidDscale']= fsm.getint('FSM_param_sigmoidDscale')
+    cfg.PARAMS['FSM_save_runoff']        = fsm_config.getboolean('FSM_save_runoff')
+    cfg.PARAMS['FSM_runoff_frequency']   = fsm_config.get('FSM_runoff_frequency')
+    cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup')
+    cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds') # note: nbnds can only be set if interpolate_bnds is True
+    cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds')
+    # important: parameters for namelist must start with "FSM_param_"
+    cfg.PARAMS['FSM_param_asmx']         = fsm_config.getfloat('FSM_param_asmx')
+    cfg.PARAMS['FSM_param_asmn']         = fsm_config.getfloat('FSM_param_asmn')
+    cfg.PARAMS['FSM_param_aice']         = fsm_config.getfloat('FSM_param_aice')
+    cfg.PARAMS['FSM_param_Plapse']       = fsm_config.getfloat('FSM_param_Plapse')
+    cfg.PARAMS['FSM_param_Pf']           = fsm_config.getfloat('FSM_param_Pf')
+    cfg.PARAMS['FSM_param_Tlapse']       = fsm_config.getfloat('FSM_param_Tlapse')
+    cfg.PARAMS['FSM_param_sigmoidDscale']= fsm_config.getint('FSM_param_sigmoidDscale')
 
     # define the basename for the FSM runoff output
     _doc = ("A netcdf file containing dates and "
@@ -73,16 +74,16 @@ def main(cfg_path):
     # ----------------------
     # 6) Climate & I/O paths
     # ----------------------
-    cfg.PATHS['climate_file']   = inp.get('climate_file')
+    cfg.PATHS['climate_file']   = inp_config.get('climate_file')
     cfg.PARAMS['baseline_climate'] = 'CUSTOM'
-    catchment_path = inp.get('catchment_path')
+    catchment_path = inp_config.get('catchment_path')
 
     # ----------------------
     # 7) OGGM run setup
     # ----------------------
-    y0 = inp.getint('y0')
-    y1 = inp.getint('y1')
-    simulation_name = outp.get('simulation_name')
+    y0 = inp_config.getint('y0')
+    y1 = inp_config.getint('y1')
+    simulation_name = outp_config.get('simulation_name')
 
     # “Always-on” OGGM flags
     cfg.PARAMS['continue_on_error'] = True
@@ -111,7 +112,7 @@ def main(cfg_path):
     rof_sel = rof_sel.sort_values('Area', ascending=False)
 
     # Grab the raw string (or None if the key is missing)
-    rgi_id = inp.get('glacier_rgi_id', fallback=None)
+    rgi_id = inp_config.get('glacier_rgi_id', fallback=None)
 
     # If the user literally wrote “None”, turn that into a Python None
     if rgi_id == 'None':
