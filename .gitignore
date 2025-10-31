@@ -5,6 +5,7 @@ plots
 .idea
 tools/__pycache__/
 *_bea*
+*_sbaig*
 *slurm_log.err*
 *slurm_log.out*
 *nlst*
