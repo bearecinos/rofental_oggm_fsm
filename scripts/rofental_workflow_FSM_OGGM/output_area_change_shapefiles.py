@@ -9,10 +9,23 @@ from rasterio.transform import from_origin
 from rasterio.features import shapes
 from shapely.geometry import shape
 from shapely import unary_union
+from shapely.geometry import GeometryCollection, Polygon, MultiPolygon
 from oggm import cfg, utils
 from oggm import workflow
 
 # Define helper functions
+def clean_geometry_collections(gdf):
+    def extract_valid_geometry(geom):
+        if isinstance(geom, GeometryCollection):
+            for g in geom.geoms:
+                if isinstance(g, (Polygon, MultiPolygon)):
+                    return g
+            return None
+        return geom
+    gdf["geometry"] = gdf["geometry"].apply(extract_valid_geometry)
+    return gdf.dropna(subset=["geometry"])
+
+
 def ice_thickness_to_outline(ice_array, transform, crs, threshold=0.0):
     """
     Convert an ice thickness NumPy array to a polygon outline.
@@ -135,9 +148,13 @@ def main(cfg_path):
                 for year in years:
                     thick_ext = df_oggm.sel(time=int(year))
                     thick_array = thick_ext.simulated_thickness.data
-                    shape_outline = ice_thickness_to_outline(thick_array,
-                                                             transform,
-                                                             custom_crs)
+
+                    raw_outline = ice_thickness_to_outline(thick_array,
+                                                           transform,
+                                                           custom_crs)
+
+                    shape_outline = clean_geometry_collections(raw_outline)
+
                     rgi_id = gdir.rgi_id
                     path_to_shapefile_dir = os.path.join(output_dir, rgi_id)
                     if not os.path.exists(path_to_shapefile_dir):
