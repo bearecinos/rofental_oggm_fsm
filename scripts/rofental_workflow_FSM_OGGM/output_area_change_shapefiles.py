@@ -14,18 +14,6 @@ from oggm import cfg, utils
 from oggm import workflow
 
 # Define helper functions
-def clean_geometry_collections(gdf):
-    def extract_valid_geometry(geom):
-        if isinstance(geom, GeometryCollection):
-            for g in geom.geoms:
-                if isinstance(g, (Polygon, MultiPolygon)):
-                    return g
-            return None
-        return geom
-    gdf["geometry"] = gdf["geometry"].apply(extract_valid_geometry)
-    return gdf.dropna(subset=["geometry"])
-
-
 def ice_thickness_to_outline(ice_array, transform, crs, threshold=0.0):
     """
     Convert an ice thickness NumPy array to a polygon outline.
@@ -54,6 +42,51 @@ def ice_thickness_to_outline(ice_array, transform, crs, threshold=0.0):
     gdf = gpd.GeoDataFrame(geometry=[merged_polygon], crs=crs)  # Adjust CRS if needed
 
     return gdf
+
+
+def clean_to_multipolygon(gdf):
+    """
+    Ensures that each row's geometry in the given Geopandas.Dataframe is a MultiPolygon,
+    containing ALL polygon parts that represent ice extent.
+    Identifies if the geometry is a:
+    - Polygon: in that case it wraps it into MultiPolygon([Polygon])
+    - MultiPolygon: we leave it as it is
+    - GeometryCollection: flatten polygonal parts into one MultiPolygon (or None if no polygons)
+    - LineString/Point/other: returned as None (dropped) we assume here that the ice extent is so small that only a thin strip or point remains.
+    """
+    def _to_multipolygon(geom):
+        if geom is None:
+            return None
+
+        # If already a MultiPolygon: keep it.
+        if isinstance(geom, MultiPolygon):
+            return geom
+
+        # If single Polygon: wrap it into a MultiPolygon for consistency.
+        if isinstance(geom, Polygon):
+            return MultiPolygon([geom])
+
+        # If GeometryCollection: collect polygon parts and flatten MultiPolygons
+        if isinstance(geom, GeometryCollection):
+            parts = []
+            for part in geom.geoms:
+                if isinstance(part, Polygon):
+                    parts.append(part)
+                elif isinstance(part, MultiPolygon):
+                    parts.extend(list(part.geoms))
+            if not parts:
+                return None
+            return MultiPolygon(parts)
+
+        # Non-polygonal geometry (LineString, Point, etc.) -> drop
+        return None
+
+    out = gdf.copy()
+    out["geometry"] = out["geometry"].apply(_to_multipolygon)
+    # drop rows with no polygonal geometry
+    out = out.dropna(subset=["geometry"]).reset_index(drop=True)
+    return out
+
 
 ## Define main function
 def main(cfg_path):
@@ -153,7 +186,7 @@ def main(cfg_path):
                                                            transform,
                                                            custom_crs)
 
-                    shape_outline = clean_geometry_collections(raw_outline)
+                    shape_outline = clean_to_multipolygon(raw_outline)
 
                     rgi_id = gdir.rgi_id
                     path_to_shapefile_dir = os.path.join(output_dir, rgi_id)
