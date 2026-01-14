@@ -9,6 +9,7 @@ from rasterio.transform import from_origin
 from rasterio.features import shapes
 from shapely.geometry import shape
 from shapely import unary_union
+from shapely.geometry import GeometryCollection, Polygon, MultiPolygon
 from oggm import cfg, utils
 from oggm import workflow
 
@@ -41,6 +42,51 @@ def ice_thickness_to_outline(ice_array, transform, crs, threshold=0.0):
     gdf = gpd.GeoDataFrame(geometry=[merged_polygon], crs=crs)  # Adjust CRS if needed
 
     return gdf
+
+
+def clean_to_multipolygon(gdf):
+    """
+    Ensures that each row's geometry in the given Geopandas.Dataframe is a MultiPolygon,
+    containing ALL polygon parts that represent ice extent.
+    Identifies if the geometry is a:
+    - Polygon: in that case it wraps it into MultiPolygon([Polygon])
+    - MultiPolygon: we leave it as it is
+    - GeometryCollection: flatten polygonal parts into one MultiPolygon (or None if no polygons)
+    - LineString/Point/other: returned as None (dropped) we assume here that the ice extent is so small that only a thin strip or point remains.
+    """
+    def _to_multipolygon(geom):
+        if geom is None:
+            return None
+
+        # If already a MultiPolygon: keep it.
+        if isinstance(geom, MultiPolygon):
+            return geom
+
+        # If single Polygon: wrap it into a MultiPolygon for consistency.
+        if isinstance(geom, Polygon):
+            return MultiPolygon([geom])
+
+        # If GeometryCollection: collect polygon parts and flatten MultiPolygons
+        if isinstance(geom, GeometryCollection):
+            parts = []
+            for part in geom.geoms:
+                if isinstance(part, Polygon):
+                    parts.append(part)
+                elif isinstance(part, MultiPolygon):
+                    parts.extend(list(part.geoms))
+            if not parts:
+                return None
+            return MultiPolygon(parts)
+
+        # Non-polygonal geometry (LineString, Point, etc.) -> drop
+        return None
+
+    out = gdf.copy()
+    out["geometry"] = out["geometry"].apply(_to_multipolygon)
+    # drop rows with no polygonal geometry
+    out = out.dropna(subset=["geometry"]).reset_index(drop=True)
+    return out
+
 
 ## Define main function
 def main(cfg_path):
@@ -135,9 +181,13 @@ def main(cfg_path):
                 for year in years:
                     thick_ext = df_oggm.sel(time=int(year))
                     thick_array = thick_ext.simulated_thickness.data
-                    shape_outline = ice_thickness_to_outline(thick_array,
-                                                             transform,
-                                                             custom_crs)
+
+                    raw_outline = ice_thickness_to_outline(thick_array,
+                                                           transform,
+                                                           custom_crs)
+
+                    shape_outline = clean_to_multipolygon(raw_outline)
+
                     rgi_id = gdir.rgi_id
                     path_to_shapefile_dir = os.path.join(output_dir, rgi_id)
                     if not os.path.exists(path_to_shapefile_dir):
