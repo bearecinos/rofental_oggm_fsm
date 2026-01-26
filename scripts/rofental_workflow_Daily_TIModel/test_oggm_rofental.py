@@ -159,7 +159,7 @@ def main(cfg_path):
         mb_model_class=DailyTI_nocheck,
     )
 
-    # We do this for FSM so lets do it here too
+    # We do this for FSM so lets do it here too, though it likely is not needed
     workflow.calibrate_inversion_from_consensus(
         gdirs,
         apply_fs_on_mismatch=True,
@@ -177,10 +177,11 @@ def main(cfg_path):
     workflow.execute_entity_task(
         tasks.run_from_climate_data,
         gdirs,
-        fixed_geometry_spinup_yr=spinup_start_yr,
+#        fixed_geometry_spinup_yr=spinup_start_yr,
+        ys=y0,ye=y1,
         climate_filename="climate_historical_daily",
         mb_model_class=DailyTI_nocheck,
-        output_filesuffix="_hist_fixed_geom",
+        output_filesuffix="_historical",
     )
 
     # Now we do the historical run
@@ -191,10 +192,10 @@ def main(cfg_path):
         run_task=tasks.run_from_climate_data,
         climate_filename="climate_historical_daily",
         mb_model_class=DailyTI_nocheck,
-        init_model_filesuffix="_hist_fixed_geom",
+        init_model_filesuffix="_historical",
         output_filesuffix=simulation_name,
-        fixed_geometry_spinup_yr=1980,
-        ye=2020,
+#        fixed_geometry_spinup_yr=1980
+        ys=y0,ye=y1
         # keep defaults: store_monthly_step=False, mb_elev_feedback='annual'
     )
 
