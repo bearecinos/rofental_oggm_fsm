@@ -58,6 +58,12 @@ def main(cfg_path):
     y0 = inp_config.getint('y0')
     y1 = inp_config.getint('y1')
     simulation_name = outp_config.get('simulation_name')
+    useThreeStep = inp_config.getboolean('useThreeStep')
+    if useThreeStep is None:
+        useThreeStep = False
+    useDaily = inp_config.getboolean('useDaily')
+    if useDaily is None:
+        useDaily = False
 
     # “Always-on” OGGM flags
     cfg.PARAMS['continue_on_error'] = True
@@ -98,6 +104,30 @@ def main(cfg_path):
     else:
         selection = rof_sel
 
+    # Build a "safe" DailyTIModel class that disables the calibration-source check
+    # TODO: this needs checking with Fabien as there is no docs for this model yet
+    # But my thoughts are is it worth re-calibrating a Daily SMB with Hugonnet if this
+    # is just a yearly average?? probably not
+
+    DailyTI_nocheck = partial(massbalance.DailyTIModel, check_calib_params=False)
+
+    # new workflow for dev branch
+    if not useDaily:
+        MBModel = massbalance.MonthlyTIModel
+        settings_filesuffix=''
+        observations_filesuffix=''
+        climate_filename="climate_historical"
+    else:
+        MBModel = DailyTI_nocheck
+        settings_filesuffix='_daily'
+        observations_filesuffix='_daily'
+        climate_filename="climate_historical_daily"
+        cfg.PARAMS['baseline_climate'] = 'GSWP3_W5E5_daily'
+        
+        if useThreeStep:
+            MBModel = DailyTI_nocheck
+
+
     # initialize glacier directories
     if reset:
         gdirs = workflow.init_glacier_directories(
@@ -108,6 +138,9 @@ def main(cfg_path):
         )
     else:
         gdirs = workflow.init_glacier_directories(selection)
+
+#    for gdir in gdirs:
+#        utils.ModelSettings(gdir, filesuffix=settings_filesuffix, parent_filesuffix='')        
 
     # ----------------------
     # 8) Preprocessing workflow
@@ -146,17 +179,28 @@ def main(cfg_path):
     # Daily climate for DailyTIModel
     workflow.execute_entity_task(process_w5e5_data, gdirs, daily=True)
 
-    # Build a "safe" DailyTIModel class that disables the calibration-source check
-    # TODO: this needs checking with Fabien as there is no docs for this model yet
-    # But my thoughts are is it worth re-calibrating a Daily SMB with Hugonnet if this
-    # is just a yearly average?? probably not
-    DailyTI_nocheck = partial(massbalance.DailyTIModel, check_calib_params=False)
+
+    # 1) if we specify, do an informed three step calibration. If we are using a Daily TIM, 
+    #    then this should work (comm. patrick schmitt). If we are using Monthly, then this 
+    #    should return the params in the prepro dir
+
+    if useThreeStep:
+      workflow.execute_entity_task(
+        tasks.mb_calibration_from_hugonnet_mb,
+        gdirs,
+        settings_filesuffix=settings_filesuffix,
+        observations_filesuffix=observations_filesuffix,
+        informed_threestep=True,
+        overwrite_gdir=True,
+        write_to_gdir=True,
+        mb_model_class=MBModel)
+
 
     # 2) Apparent MB (if you need it)
     workflow.execute_entity_task(
         tasks.apparent_mb_from_any_mb,
         gdirs,
-        mb_model_class=DailyTI_nocheck,
+        mb_model_class=MBModel,
     )
 
     # We do this for FSM so lets do it here too, though it likely is not needed
@@ -168,6 +212,7 @@ def main(cfg_path):
         #    # the equilibrium assumption for retreating glaciers (see. Figure 5 of Maussion et al. 2019)
     );
 
+
     # I think the step below might redundant if I do a spin up
     # finally create the dynamic flowlines
     workflow.execute_entity_task(tasks.init_present_time_glacier, gdirs)
@@ -177,27 +222,28 @@ def main(cfg_path):
     workflow.execute_entity_task(
         tasks.run_from_climate_data,
         gdirs,
-#        fixed_geometry_spinup_yr=spinup_start_yr,
         ys=y0,ye=y1,
-        climate_filename="climate_historical_daily",
-        mb_model_class=DailyTI_nocheck,
-        output_filesuffix="_historical",
+        climate_filename=climate_filename,
+        mb_model_class=MBModel,
+        output_filesuffix=simulation_name,
     )
 
     # Now we do the historical run
     # Forward simulation with hydro diagnostics (control)
-    workflow.execute_entity_task(
+
+    # if we are not looking at runoff, let's not do this for now
+    if False:
+     workflow.execute_entity_task(
         tasks.run_with_hydro,
         gdirs,
         run_task=tasks.run_from_climate_data,
         climate_filename="climate_historical_daily",
-        mb_model_class=DailyTI_nocheck,
+        mb_model_class=MBModel,
         init_model_filesuffix="_historical",
-        output_filesuffix=simulation_name,
-#        fixed_geometry_spinup_yr=1980
+        output_filesuffix="_historical_runhydro",
         ys=y0,ye=y1
         # keep defaults: store_monthly_step=False, mb_elev_feedback='annual'
-    )
+     )
 
     workflow.execute_entity_task(distribute_2d.add_smoothed_glacier_topo, gdirs)
     workflow.execute_entity_task(distribute_2d.assign_points_to_band, gdirs)
