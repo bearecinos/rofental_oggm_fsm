@@ -5,6 +5,7 @@ import xarray as xr
 from oggm import cfg, utils, workflow, tasks
 from oggm.sandbox import distribute_2d
 from FSM_oggm_MB import FactorialSnowpackModel, process_wfde5_data, fsm_flowline_model_run
+from IPython import embed
 
 
 def main(cfg_path):
@@ -12,6 +13,7 @@ def main(cfg_path):
     # 1) Read configuration file
     # ----------------------
     cp = configparser.ConfigParser()
+    cp.optionxform = str
     cp.read(cfg_path)
 
     gen_config  = cp['General']
@@ -54,14 +56,26 @@ def main(cfg_path):
     cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup')
     cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds') # note: nbnds can only be set if interpolate_bnds is True
     cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds')
+
     # important: parameters for namelist must start with "FSM_param_"
-    cfg.PARAMS['FSM_param_asmx']         = fsm_config.getfloat('FSM_param_asmx')
-    cfg.PARAMS['FSM_param_asmn']         = fsm_config.getfloat('FSM_param_asmn')
-    cfg.PARAMS['FSM_param_aice']         = fsm_config.getfloat('FSM_param_aice')
-    cfg.PARAMS['FSM_param_Plapse']       = fsm_config.getfloat('FSM_param_Plapse')
-    cfg.PARAMS['FSM_param_Pf']           = fsm_config.getfloat('FSM_param_Pf')
-    cfg.PARAMS['FSM_param_Tlapse']       = fsm_config.getfloat('FSM_param_Tlapse')
-    cfg.PARAMS['FSM_param_sigmoidDscale']= fsm_config.getint('FSM_param_sigmoidDscale')
+    cpdict = dict(fsm_config)
+    for key in cpdict.keys():
+        if (key[:10] == 'FSM_param_'):
+            valstr = cpdict[key]
+
+            if (valstr.isdigit()):
+            # number is integer
+                val = int(valstr)
+            else:
+                try:
+            # number is float
+                    val = float(valstr)
+            # it is nonnumeric
+                except ValueError:
+                    val = valstr
+
+            cfg.PARAMS[key]              = val
+
 
     # define the basename for the FSM runoff output
     _doc = ("A netcdf file containing dates and "
