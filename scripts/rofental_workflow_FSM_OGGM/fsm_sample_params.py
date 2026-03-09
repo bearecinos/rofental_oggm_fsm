@@ -128,7 +128,6 @@ def main(cfg_path):
     cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup',fallback=True)
     cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds',fallback=False) # note: nbnds can only be set if interpolate_bnds is True
     cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds',fallback=None)
-    years_cost                           = json.loads(fsm_config.get('years_cost'))
     rho = cfg.PARAMS['density_ice']
 
     # important: parameters for namelist must start with "FSM_param_"
@@ -166,6 +165,7 @@ def main(cfg_path):
     # ----------------------
     y0 = inp_config.getint('y0')
     y1 = inp_config.getint('y1')
+    years_cost = json.loads(inp_config.get('years_cost'))
     simulation_name = outp_config.get('simulation_name')
 
     # “Always-on” OGGM flags
