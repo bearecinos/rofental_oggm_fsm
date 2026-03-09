@@ -4,9 +4,12 @@ import geopandas as gpd
 import xarray as xr
 from oggm import cfg, utils, workflow, tasks
 from oggm.sandbox import distribute_2d
-from FSM_oggm_MB import FactorialSnowpackModel, process_wfde5_data, fsm_flowline_model_run
 from IPython import embed
+import json
 import numpy as np
+
+from oggm.cfg import SEC_IN_YEAR
+rho = None
 
 def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_profile=True, doMean=False):
 
@@ -72,6 +75,8 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
     if get_profile:
         return_dict['mb_profile_mwe'] = mb_profile
         return_dict['mb_profile_mwe_unc'] = mb_profile_unc
+        return_dict['mb_profile_lower'] = lower_band
+        return_dict['mb_profile_upper'] = upper_band
 
     return return_dict
 
@@ -118,24 +123,33 @@ def main(cfg_path):
     # ----------------------
     # 5) FSM parameters
     # ----------------------
-    cfg.PARAMS['FSM_save_runoff']        = fsm_config.getboolean('FSM_save_runoff')
-    cfg.PARAMS['FSM_runoff_frequency']   = fsm_config.get('FSM_runoff_frequency')
-    cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup')
-    cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds') # note: nbnds can only be set if interpolate_bnds is True
-    cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds')
-    # important: parameters for namelist must start with "FSM_param_"
-    cfg.PARAMS['FSM_param_asmx']         = fsm_config.getfloat('FSM_param_asmx')
-    cfg.PARAMS['FSM_param_asmn']         = fsm_config.getfloat('FSM_param_asmn')
-    cfg.PARAMS['FSM_param_aice']         = fsm_config.getfloat('FSM_param_aice')
-    cfg.PARAMS['FSM_param_Plapse']       = fsm_config.getfloat('FSM_param_Plapse')
-    cfg.PARAMS['FSM_param_Pf']           = fsm_config.getfloat('FSM_param_Pf')
-    cfg.PARAMS['FSM_param_Tlapse']       = fsm_config.getfloat('FSM_param_Tlapse')
-    cfg.PARAMS['FSM_param_sigmoidDscale']= fsm_config.getint('FSM_param_sigmoidDscale')
+    cfg.PARAMS['FSM_save_runoff']        = fsm_config.getboolean('FSM_save_runoff',fallback=True)
+    cfg.PARAMS['FSM_runoff_frequency']   = fsm_config.get('FSM_runoff_frequency',fallback='D')
+    cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup',fallback=True)
+    cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds',fallback=False) # note: nbnds can only be set if interpolate_bnds is True
+    cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds',fallback=None)
+    years_cost                           = json.loads(fsm_config.get('years_cost'))
+    rho = cfg.PARAMS['density_ice']
 
-    # define the basename for the FSM runoff output
-    _doc = ("A netcdf file containing dates and "
-            "ice‐based and snow‐based runoff volume for each date interval")
-    cfg.BASENAMES['FSM_runoff'] = ('FSM_runoff.nc', _doc)
+    # important: parameters for namelist must start with "FSM_param_"
+    cpdict = dict(fsm_config)
+    sens_params = []
+
+    for key in cpdict.keys():
+        if (key[:10] == 'FSM_param_'):
+
+            valstr = cpdict[key]
+            val = json.loads(valstr)
+
+            if isinstance(val,list):
+                cfg.PARAMS[key] = val[0]
+                sens_params = sens_params + [key[10:]]
+            else:
+                cfg.PARAMS[key] = val
+
+    oggm_fsm_path                        = fsm_config.get('FSM-OGGM_path')
+    from FSM_oggm_MB import FactorialSnowpackModel, process_wfde5_data
+    sys.path.append(oggm_fsm_path)
 
     # write/reset the FSM namelist
     FactorialSnowpackModel.create_nml(reset=reset)
@@ -181,17 +195,17 @@ def main(cfg_path):
     rof_sel = rof_sel.sort_values('Area', ascending=False)
 
     # Grab the raw string (or None if the key is missing)
-    rgi_id = inp_config.get('glacier_rgi_id', fallback=None)
+    wgms_id = inp_config.get('glacier_wgms_id', fallback=491)
 
-    # If the user literally wrote “None”, turn that into a Python None
-    if rgi_id == 'None':
-        rgi_id = None
+        # HEF: 491 summer bal non-nan 2013-2025
+    # KEF: 507 no summer bal
+    # VER: 489 summer bal 1966 on!
+    wgms_to_rgi = { 491: "RGI60-11.00897", 
+                    507: "RGI60-11.00787",
+                    489: "RGI60-11.00719" }
 
     # Now select
-    if rgi_id is not None:
-        selection = rof_sel[rof_sel.RGIId == rgi_id]
-    else:
-        selection = rof_sel
+    selection = rof_sel[rof_sel.RGIId == wgms_to_rgi[wgms_id]]
 
     # initialize glacier directories
     if reset:
@@ -238,39 +252,22 @@ def main(cfg_path):
     workflow.execute_entity_task(process_wfde5_data, gdirs, y0=str(y0), y1=str(y1))
     print("DONE PROCESSING wfde5 data")
 
-    workflow.execute_entity_task(tasks.apparent_mb_from_any_mb,
-                                 gdirs,
-                                 mb_model_class=FactorialSnowpackModel)
+    gdir = gdirs[0]
+    fls = gdir.read_pickle('inversion_flowlines')
+    areas = fls[0].bin_area_m2
 
-    workflow.calibrate_inversion_from_consensus(
-        gdirs,
-        apply_fs_on_mismatch=True,
-        error_on_mismatch=True,  # if you're running many glaciers some might not work
-        filter_inversion_output=True,  # this partly filters the over deepening due to
-        #    # the equilibrium assumption for retreating glaciers (see. Figure 5 of Maussion et al. 2019)
-        volume_m3_reference=None,  # here you could provide your own total volume estimate in m3
-    )
+    mb_model = FactorialSnowpackModel(gdir=gdir)
+    years_compute = np.array([years_cost[0]-1] + years_cost)
+    mb_output = None
+    for i, year in enumerate(years_compute):
+        mb_year = mb_model.get_mb(heights=fls[0].surface_h, year=year, fls=fls, reset_state=True, monthly=True)
+        if mb_output is None:
+            mb_output = mb_year
+        else:
+            mb_output = np.vstack((mb_output,mb_year))
 
-    # finally create the dynamic flowlines
-    workflow.execute_entity_task(tasks.init_present_time_glacier, gdirs)
 
-    # DNG because of an ideosyncracy with OGGM date specification, we pass
-    # ye=2020 in order to process 2019
-    workflow.execute_entity_task(fsm_flowline_model_run, gdirs,
-                                 climate_filename='climate_historical_fsm',
-                                 output_filesuffix='_climate_historical_fsm',
-                                 ys=y0, ye=y1+1)
 
-    print("DONE running FSM")
-
-    # ----------------------
-    # 10) Final 2D distribution
-    # ----------------------
-
-    workflow.execute_entity_task(distribute_2d.add_smoothed_glacier_topo, gdirs)
-    workflow.execute_entity_task(distribute_2d.assign_points_to_band, gdirs)
-    workflow.execute_entity_task(distribute_2d.distribute_thickness_from_simulation,
-                                 gdirs, input_filesuffix=simulation_name)
 
 
 if __name__ == '__main__':
