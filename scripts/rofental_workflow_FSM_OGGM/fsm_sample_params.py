@@ -93,7 +93,7 @@ def main(cfg_path):
     fsm_config  = cp['FSM_OGGM']
     inp_config  = cp['InputData']
     outp_config = cp['Output']
-
+ 
     # ----------------------
     # 2) Parse general settings
     # ----------------------
@@ -113,6 +113,10 @@ def main(cfg_path):
     print(f"Working directory: {cfg.PATHS['working_dir']}")
     print(f"Reset = {reset}  (set False to preserve existing directories)")
 
+    _doc = ("A netcdf file containing dates and "
+            "ice‐based and snow‐based runoff volume for each date interval")
+    cfg.BASENAMES['FSM_runoff'] = ('FSM_runoff.nc', _doc)
+
     # ----------------------
     # 4) OGGM parameters
     # ----------------------
@@ -128,7 +132,7 @@ def main(cfg_path):
     cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup',fallback=True)
     cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds',fallback=False) # note: nbnds can only be set if interpolate_bnds is True
     cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds',fallback=None)
-    rho = cfg.PARAMS['density_ice']
+    rho = cfg.PARAMS['ice_density']
 
     # important: parameters for namelist must start with "FSM_param_"
     cpdict = dict(fsm_config)
@@ -147,8 +151,8 @@ def main(cfg_path):
                 cfg.PARAMS[key] = val
 
     oggm_fsm_path                        = fsm_config.get('FSM-OGGM_path')
-    from FSM_oggm_MB import FactorialSnowpackModel, process_wfde5_data
     sys.path.append(oggm_fsm_path)
+    from FSM_oggm_MB import FactorialSnowpackModel, process_wfde5_data
 
     # write/reset the FSM namelist
     FactorialSnowpackModel.create_nml(reset=reset)
@@ -159,6 +163,7 @@ def main(cfg_path):
     cfg.PATHS['climate_file']   = inp_config.get('climate_file')
     cfg.PARAMS['baseline_climate'] = 'CUSTOM'
     catchment_path = inp_config.get('catchment_path')
+    wgms_path = inp_config.get('wgms_path')
 
     # ----------------------
     # 7) OGGM run setup
@@ -265,6 +270,8 @@ def main(cfg_path):
             mb_output = mb_year
         else:
             mb_output = np.vstack((mb_output,mb_year))
+
+    wgms_dict = get_WGMS_data(wgms_path, years_cost, wgms_id)
 
 
 
