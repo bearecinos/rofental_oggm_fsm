@@ -1,4 +1,5 @@
 import sys
+import os
 import configparser
 import geopandas as gpd
 import xarray as xr
@@ -7,6 +8,8 @@ from oggm.sandbox import distribute_2d
 from IPython import embed
 import json
 import numpy as np
+import pandas as pd
+from SALib import ProblemSpec
 
 from oggm.cfg import SEC_IN_YEAR
 rho = None
@@ -86,6 +89,7 @@ def main(cfg_path):
     # 1) Read configuration file
     # ----------------------
     cp = configparser.ConfigParser()
+    cp.optionxform = str
     cp.read(cfg_path)
 
     gen_config  = cp['General']
@@ -137,16 +141,19 @@ def main(cfg_path):
     # important: parameters for namelist must start with "FSM_param_"
     cpdict = dict(fsm_config)
     sens_params = []
+    sens_bounds = []
 
     for key in cpdict.keys():
         if (key[:10] == 'FSM_param_'):
 
             valstr = cpdict[key]
             val = json.loads(valstr)
+#            embed(header='param name: '+valstr)
 
             if isinstance(val,list):
                 cfg.PARAMS[key] = val[0]
-                sens_params = sens_params + [key[10:]]
+                sens_params.append(key)
+                sens_bounds.append(val)
             else:
                 cfg.PARAMS[key] = val
 
@@ -164,6 +171,8 @@ def main(cfg_path):
     cfg.PARAMS['baseline_climate'] = 'CUSTOM'
     catchment_path = inp_config.get('catchment_path')
     wgms_path = inp_config.get('wgms_path')
+    parameter_sample_file = inp_config.get('sample_file',fallback=None)
+    overwrite_sample_file = inp_config.getboolean('overwrite_sample',fallback=False)
 
     # ----------------------
     # 7) OGGM run setup
@@ -251,29 +260,78 @@ def main(cfg_path):
         assert len(ds.count().variables.keys()) == 21
 
     # ----------------------
-    # 9) MB calibration & FSM runs
+    # 9) Parameter Sample Generation
     # ----------------------
 
+    sens_params
+    fsm_sp = ProblemSpec({
+        "names": sens_params,
+        "groups": None,
+        "bounds": sens_bounds,
+        "outputs": ["CF"],
+    })
+
+
+    if (overwrite_sample_file) or (parameter_sample_file is None):
+        fsm_sp.sample_sobol(512, calc_second_order=True)
+        sample_arr = fsm_sp.samples
+        results_arr = -1*np.ones((sample_arr.shape[0],3))
+        sample_results_arr = np.hstack((sample_arr,results_arr))
+        dfsample = pd.DataFrame(data=sample_results_arr, columns=sens_params+['cost_profile','cost_mb','cost_wmb'])
+        if parameter_sample_file is None:
+            parameter_sample_file = os.getcwd() + '/analysis.csv'
+        dfsample.to_csv(parameter_sample_file)
+    else:
+        dfsample = pd.read_csv(parameter_sample_file)
+        arr = dfsample.to_numpy()
+        sample_arr = arr[:,:-3]
+        results_arr = arr[:,-3:]
+        fsm_sp.set_samples(sample_arr)
+
+    profile_start = np.where(results_arr[:,0]==-1)[0][0]
+    mb_start = np.where(results_arr[:,1]==-1)[0][0]
+    winter_mb_start = np.where(results_arr[:,2]==-1)[0][0]
+    isample_start = min(profile_start, mb_start, winter_mb_start)
+    
     workflow.execute_entity_task(process_wfde5_data, gdirs, y0=str(y0), y1=str(y1))
     print("DONE PROCESSING wfde5 data")
 
     gdir = gdirs[0]
     fls = gdir.read_pickle('inversion_flowlines')
     areas = fls[0].bin_area_m2
+    elevs = fls[0].surface_h
 
     mb_model = FactorialSnowpackModel(gdir=gdir)
+    wgms_dict = get_WGMS_data(wgms_path, years_cost, wgms_id)
+    
     years_compute = np.array([years_cost[0]-1] + years_cost)
     mb_output = None
-    for i, year in enumerate(years_compute):
-        mb_year = mb_model.get_mb(heights=fls[0].surface_h, year=year, fls=fls, reset_state=True, monthly=True)
-        if mb_output is None:
-            mb_output = mb_year
-        else:
-            mb_output = np.vstack((mb_output,mb_year))
 
-    wgms_dict = get_WGMS_data(wgms_path, years_cost, wgms_id)
+    for isample in range(isample_start,sample_arr.shape[0]): 
+
+        for i, name in enumerate(sens_params):
+            cfg.PARAMS[name] = sample_arr[isample, i]
+
+        FactorialSnowpackModel.create_nml(reset=False)
+            
+        for i, year in enumerate(years_compute):    
+            mb_year = mb_model.get_mb(heights=fls[0].surface_h, year=year, fls=fls, reset_state=True, monthly=True)
+            if mb_output is None:
+                mb_output = mb_year
+            else:
+                mb_output = np.vstack((mb_output,mb_year))
+
+        err1, err2, err3 = get_cost(mb_output, years_compute, wgms_dict, areas, elevs)
+        results_arr[isample,-3:] = [err2, err2, err3]
+
+        if (np.mod(isample,10)==0):
+            print (str(isample) + ' samples done')
+        if (np.mod(isample,500)==0):
+            sample_results_arr = np.hstack((sample_arr,results))
+            pd.DataFrame(data=sample_results_arr, columns=sens_params+['cost_profile','cost_mb','cost_wmb']).to_csv(parameter_sample_file)
 
 
+    print("DONE WITH SAMPLE")
 
 
 
