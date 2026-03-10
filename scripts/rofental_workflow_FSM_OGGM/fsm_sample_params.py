@@ -7,15 +7,25 @@ from oggm.sandbox import distribute_2d
 from IPython import embed
 import json
 import numpy as np
+from scipy.interpolate import interp1d
+
 
 from oggm.cfg import SEC_IN_YEAR
-rho = None
+rho = 1000.
 
-def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_profile=True, doMean=False):
+def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_profile=True):
 
-    # HEF: 491 summer bal non-nan 2013-2025
-    # KEF: 507 no summer bal
-    # VER: 489 summer bal 1966 on!
+    """
+    A function to retrieve WGMS mass balance data for a reference glacier.
+
+    Parameters
+    ----------
+    path: 	path to WGMS FoG data folder containing csv files.
+    years:	the years for which CF will be evaluated.
+    glac_id:    the wgms ID
+    get_mb, get_winter_mb, get_profile: flags to return different meas types
+
+    """
 
     import pandas as pd
     return_dict = dict()
@@ -65,6 +75,7 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
         else:
             mb_profile_unc[:] = 0.05
 
+    return_dict['mb_years'] = years
 
     if get_mb:
         return_dict['mb_annual_mwe'] = bal
@@ -80,6 +91,60 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
 
     return return_dict
 
+def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
+	profile_cost=True, mb_cost=True, winter_mb_cost=True, doMean=False):
+
+    profile_misfit = None
+    mb_misfit = None
+    winter_mb_misfit = None 
+
+    mb_output_mon = np.repeat(mb_output_years,12)
+
+    inds = np.isin(mb_output_mon,wgms_data['mb_years'])
+
+    if profile_cost:
+	
+	# take average over all mb_output
+        mb_profile = np.mean(mb_output[inds,:],0)
+	# convert from m/s to mwe per year
+        mb_profile = mb_profile * SEC_IN_YEAR * rho / 1000.
+	# interpolate to wgms_bands
+        func = interp1d(elevs, mb_profile, bounds_error=False)
+        mb_interp = func(.5*(wgms_data['mb_profile_lower']+wgms_data['mb_profile_upper']))
+	# sum squared difference
+        profile_misfit = np.nansum( (mb_interp-wgms_data['mb_profile_mwe'])**2 / wgms_data['mb_profile_mwe_unc']**2 )
+
+    if mb_cost:
+
+        mb_annual = (mb_output[inds,:]).reshape(-1,12,mb_output.shape[1]).mean(axis=1) # result is in m/s
+        mb_series = np.matmul(mb_annual, areas) # result is m3/s
+        mb_series = mb_series * rho / 1000. * SEC_IN_YEAR # result in mwe/yr
+        if not doMean:
+            mb_misfit = ( (mb_series - wgms_data['mb_annual_mwe'])**2 / wgms_data['mb_annual_mwe_unc']**2 ).sum()
+        else:
+            mb_misfit =  (  mb_series.mean() - np.mean(wgms_data['mb_annual_mwe']) )**2 / wgms_data['mb_annual_mwe_unc'][0]**2
+
+    if winter_mb_misfit:
+
+        mb_winter = None
+        for i in range(1,len(mb_output_years)):
+
+            indwin = np.array([-3,-2,-1,0,1,2,3])+12*i
+            mb_season = mb_output[indwin,:].mean(axis=0)
+            if mb_winter is None:
+                mb_winter = mb_season
+            else:
+                mb_winter = np.vstack(mb_winter,mb_season)
+
+        mb_series = np.matmul(mb_winter, areas) # result is m3/s
+        mb_series = mb_series * rho / 1000. * SEC_IN_YEAR # result in mwe/yr
+
+        if not doMean:
+            winter_mb_misfit = ( (mb_series - wgms_data['mb_winter_mwe'])**2 / wgms_data['mb_winter_mwe_unc']**2 ).sum()
+        else:
+            winter_mb_misfit =  (  mb_series.mean() - np.mean(wgms_data['mb_winter_mwe']) )**2 / wgms_data['mb_winter_mwe_unc'][0]**2
+	
+    return profile_misfit, mb_misfit, winter_mb_misfit
 
 def main(cfg_path):
     # ----------------------
@@ -117,6 +182,9 @@ def main(cfg_path):
             "ice‐based and snow‐based runoff volume for each date interval")
     cfg.BASENAMES['FSM_runoff'] = ('FSM_runoff.nc', _doc)
 
+    global rho
+    rho = cfg.PARAMS['ice_density']
+
     # ----------------------
     # 4) OGGM parameters
     # ----------------------
@@ -132,7 +200,6 @@ def main(cfg_path):
     cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup',fallback=True)
     cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds',fallback=False) # note: nbnds can only be set if interpolate_bnds is True
     cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds',fallback=None)
-    rho = cfg.PARAMS['ice_density']
 
     # important: parameters for namelist must start with "FSM_param_"
     cpdict = dict(fsm_config)
@@ -260,18 +327,21 @@ def main(cfg_path):
     gdir = gdirs[0]
     fls = gdir.read_pickle('inversion_flowlines')
     areas = fls[0].bin_area_m2
+    elevs = fls[0].surface_h
 
     mb_model = FactorialSnowpackModel(gdir=gdir)
     years_compute = np.array([years_cost[0]-1] + years_cost)
     mb_output = None
     for i, year in enumerate(years_compute):
-        mb_year = mb_model.get_mb(heights=fls[0].surface_h, year=year, fls=fls, reset_state=True, monthly=True)
+        mb_year = mb_model.get_mb(heights=elevs, year=year, fls=fls, reset_state=True, monthly=True)
         if mb_output is None:
             mb_output = mb_year
         else:
             mb_output = np.vstack((mb_output,mb_year))
 
     wgms_dict = get_WGMS_data(wgms_path, years_cost, wgms_id)
+
+    err1, err2, err3 = get_cost(mb_output, years_compute, wgms_dict, areas, elevs)
 
 
 
