@@ -107,14 +107,14 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
 
     if profile_cost:
 	
-	# take average over all mb_output
+    	# take average over all mb_output
         mb_profile = np.mean(mb_output[inds,:],0)
-	# convert from m/s to mwe per year
+	    # convert from m/s to mwe per year
         mb_profile = mb_profile * SEC_IN_YEAR * rho / 1000.
-	# interpolate to wgms_bands
+    	# interpolate to wgms_bands
         func = interp1d(elevs, mb_profile, bounds_error=False)
         mb_interp = func(.5*(wgms_data['mb_profile_lower']+wgms_data['mb_profile_upper']))
-	# sum squared difference
+	    # sum squared difference
         profile_misfit = np.nansum( (mb_interp-wgms_data['mb_profile_mwe'])**2 / wgms_data['mb_profile_mwe_unc']**2 )
 
     if mb_cost:
@@ -246,6 +246,7 @@ def main(cfg_path):
     # ----------------------
     y0 = inp_config.getint('y0')
     y1 = inp_config.getint('y1')
+    num_sample = inp_config.getint('num_samples',fallback=100)
     years_cost = json.loads(inp_config.get('years_cost'))
     simulation_name = outp_config.get('simulation_name')
 
@@ -340,7 +341,7 @@ def main(cfg_path):
 
 
     if (overwrite_sample_file) or (parameter_sample_file is None):
-        fsm_sp.sample_sobol(512, calc_second_order=True)
+        fsm_sp.sample_sobol(num_sample, calc_second_order=True)
         sample_arr = fsm_sp.samples
         results_arr = -1*np.ones((sample_arr.shape[0],3))
         sample_results_arr = np.hstack((sample_arr,results_arr))
@@ -389,8 +390,8 @@ def main(cfg_path):
             else:
                 mb_output = np.vstack((mb_output,mb_year))
 
-        err1, err2, err3 = get_cost(mb_output, years_compute, wgms_dict, areas, elevs)
-        results_arr[isample,-3:] = [err1, err2, err3]
+        profile_err, mb_err, wmb_err = get_cost(mb_output, years_compute, wgms_dict, areas, elevs)
+        results_arr[isample,-3:] = [profile_err, mb_err, wmb_err]
 
         if (np.mod(isample,10)==0):
             print (str(isample) + ' samples done')
