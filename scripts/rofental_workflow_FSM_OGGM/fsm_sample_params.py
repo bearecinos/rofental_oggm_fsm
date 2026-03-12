@@ -114,20 +114,20 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
     	# interpolate to wgms_bands
         func = interp1d(elevs, mb_profile, bounds_error=False)
         mb_interp = func(.5*(wgms_data['mb_profile_lower']+wgms_data['mb_profile_upper']))
-	    # sum squared difference
-        profile_misfit = np.nansum( (mb_interp-wgms_data['mb_profile_mwe'])**2 / wgms_data['mb_profile_mwe_unc']**2 )
+    	# sum squared difference
+        profile_misfit = np.sqrt(np.nanmean( (mb_interp-wgms_data['mb_profile_mwe'])**2 / wgms_data['mb_profile_mwe_unc']**2 ))
 
     if mb_cost:
 
         mb_annual = (mb_output[inds,:]).reshape(-1,12,mb_output.shape[1]).mean(axis=1) # result is in m/s
         mb_series = np.matmul(mb_annual, areas) # result is m3/s
-        mb_series = mb_series * rho / 1000. * SEC_IN_YEAR # result in mwe/yr
+        mb_series = mb_series * rho / 1000. * SEC_IN_YEAR / areas.sum() # result in mwe/yr
         if not doMean:
-            mb_misfit = ( (mb_series - wgms_data['mb_annual_mwe'])**2 / wgms_data['mb_annual_mwe_unc']**2 ).sum()
+            mb_misfit = np.sqrt(( (mb_series - wgms_data['mb_annual_mwe'])**2 / wgms_data['mb_annual_mwe_unc']**2 ).mean())
         else:
-            mb_misfit =  (  mb_series.mean() - np.mean(wgms_data['mb_annual_mwe']) )**2 / wgms_data['mb_annual_mwe_unc'][0]**2
+            mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_annual_mwe']) ) / wgms_data['mb_annual_mwe_unc'][0]
 
-    if winter_mb_misfit:
+    if winter_mb_cost:
 
         mb_winter = None
         for i in range(1,len(mb_output_years)):
@@ -137,15 +137,15 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
             if mb_winter is None:
                 mb_winter = mb_season
             else:
-                mb_winter = np.vstack(mb_winter,mb_season)
+                mb_winter = np.vstack((mb_winter,mb_season))
 
         mb_series = np.matmul(mb_winter, areas) # result is m3/s
-        mb_series = mb_series * rho / 1000. * SEC_IN_YEAR # result in mwe/yr
+        mb_series = mb_series * rho / 1000. * SEC_IN_YEAR / areas.sum() # result in mwe/yr
 
         if not doMean:
-            winter_mb_misfit = ( (mb_series - wgms_data['mb_winter_mwe'])**2 / wgms_data['mb_winter_mwe_unc']**2 ).sum()
+            winter_mb_misfit = np.sqrt(( (mb_series - wgms_data['mb_winter_mwe'])**2 / wgms_data['mb_winter_mwe_unc']**2 ).mean())
         else:
-            winter_mb_misfit =  (  mb_series.mean() - np.mean(wgms_data['mb_winter_mwe']) )**2 / wgms_data['mb_winter_mwe_unc'][0]**2
+            winter_mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_winter_mwe']) ) / wgms_data['mb_winter_mwe_unc'][0]
 	
     return profile_misfit, mb_misfit, winter_mb_misfit
 
@@ -215,7 +215,6 @@ def main(cfg_path):
 
             valstr = cpdict[key]
             val = json.loads(valstr)
-#            embed(header='param name: '+valstr)
 
             if isinstance(val,list):
                 cfg.PARAMS[key] = val[0]
@@ -395,7 +394,7 @@ def main(cfg_path):
 
         if (np.mod(isample,10)==0):
             print (str(isample) + ' samples done')
-        if (np.mod(isample,200)==0):
+        if (np.mod(isample,100)==0):
             sample_results_arr = np.hstack((sample_arr,results_arr))
             pd.DataFrame(data=sample_results_arr, columns=sens_params+['cost_profile','cost_mb','cost_wmb']).to_csv(parameter_sample_file)
 
