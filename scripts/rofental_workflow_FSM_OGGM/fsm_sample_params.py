@@ -5,7 +5,6 @@ import geopandas as gpd
 import xarray as xr
 from oggm import cfg, utils, workflow, tasks
 from oggm.sandbox import distribute_2d
-from IPython import embed
 import json
 import numpy as np
 import pandas as pd
@@ -143,7 +142,7 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
         mb_series = mb_series * rho / 1000. * SEC_IN_YEAR / areas.sum() # result in mwe/yr
 
         if not doMean:
-            winter_mb_misfit = np.sqrt(( (mb_series - wgms_data['mb_winter_mwe'])**2 / wgms_data['mb_winter_mwe_unc']**2 ).mean())
+            winter_mb_misfit = np.sqrt( np.nanmean( (mb_series - wgms_data['mb_winter_mwe'])**2 / wgms_data['mb_winter_mwe_unc']**2 ) )
         else:
             winter_mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_winter_mwe']) ) / wgms_data['mb_winter_mwe_unc'][0]
 	
@@ -237,7 +236,7 @@ def main(cfg_path):
     cfg.PARAMS['baseline_climate'] = 'CUSTOM'
     catchment_path = inp_config.get('catchment_path')
     wgms_path = inp_config.get('wgms_path')
-    parameter_sample_file = inp_config.get('sample_file',fallback=None)
+    parameter_sample_file = inp_config.get('parameter_sample_file',fallback=None)
     overwrite_sample_file = inp_config.getboolean('overwrite_sample',fallback=False)
 
     # ----------------------
@@ -349,19 +348,33 @@ def main(cfg_path):
             parameter_sample_file = os.getcwd() + '/analysis.csv'
         dfsample.to_csv(parameter_sample_file)
     else:
-        dfsample = pd.read_csv(parameter_sample_file)
+        dfsample = pd.read_csv(parameter_sample_file,index_col=0)
         arr = dfsample.to_numpy()
         sample_arr = arr[:,:-3]
         results_arr = arr[:,-3:]
         fsm_sp.set_samples(sample_arr)
+        print ('restarting from file ' + parameter_sample_file)
 
-    profile_start = np.where(results_arr[:,0]==-1)[0][0]
-    mb_start = np.where(results_arr[:,1]==-1)[0][0]
-    winter_mb_start = np.where(results_arr[:,2]==-1)[0][0]
-    isample_start = min(profile_start, mb_start, winter_mb_start)
+    if len(np.where(results_arr[:,0]==-1)[0])==0:
+        print('sample complete, no new results needed')
+        isample_start = sample_arr.shape[0]
+    else:
+        profile_start = np.where(results_arr[:,0]==-1)[0][0]
+        mb_start = np.where(results_arr[:,1]==-1)[0][0]
+        winter_mb_start = np.where(results_arr[:,2]==-1)[0][0]
+        isample_start = min(profile_start, mb_start, winter_mb_start)
+        print ('beginning at sample number ' + str(isample_start))
+
+    # ----------------------
+    # 10) Process wfde5 data
+    # ----------------------
     
-    workflow.execute_entity_task(process_wfde5_data, gdirs, y0=str(y0), y1=str(y1))
-    print("DONE PROCESSING wfde5 data")
+        workflow.execute_entity_task(process_wfde5_data, gdirs, y0=str(y0), y1=str(y1))
+        print("DONE PROCESSING wfde5 data")
+
+    # ----------------------
+    # 11) Run/gather results
+    # ----------------------
 
     gdir = gdirs[0]
     fls = gdir.read_pickle('inversion_flowlines')
@@ -372,6 +385,7 @@ def main(cfg_path):
     wgms_dict = get_WGMS_data(wgms_path, years_cost, wgms_id)
     
     years_compute = np.array([years_cost[0]-1] + years_cost)
+
 
     for isample in range(isample_start,sample_arr.shape[0]): 
         
@@ -390,7 +404,7 @@ def main(cfg_path):
                 mb_output = np.vstack((mb_output,mb_year))
 
         profile_err, mb_err, wmb_err = get_cost(mb_output, years_compute, wgms_dict, areas, elevs)
-        results_arr[isample,-3:] = [profile_err, mb_err, wmb_err]
+        results_arr[isample,:] = [profile_err, mb_err, wmb_err]
 
         if (np.mod(isample,10)==0):
             print (str(isample) + ' samples done')
@@ -399,7 +413,36 @@ def main(cfg_path):
             pd.DataFrame(data=sample_results_arr, columns=sens_params+['cost_profile','cost_mb','cost_wmb']).to_csv(parameter_sample_file)
 
 
+    sample_results_arr = np.hstack((sample_arr,results_arr))
+    pd.DataFrame(data=sample_results_arr, columns=sens_params+['cost_profile','cost_mb','cost_wmb']).to_csv(parameter_sample_file)
     print("DONE WITH SAMPLE")
+
+    # ----------------------
+    # 12) Analyse 
+    # ----------------------
+
+    strs = ['profile cost','mb cost','winter mb cost']
+
+    for i in range(3):
+
+        fsm_sp.set_results(results_arr[:,i])
+ 
+        fsm_sp.analyze_sobol()
+        print('analysis for ' + strs[i] + ':')
+        print(fsm_sp)
+
+    print('analysis for cf sum')
+
+    fsm_sp.set_results(results_arr.sum(axis=1))
+    fsm_sp.analyze_sobol()
+    print(fsm_sp)
+
+
+
+
+ 
+
+
 
 
 
