@@ -13,6 +13,8 @@ from scipy.interpolate import interp1d
 
 
 from oggm.cfg import SEC_IN_YEAR
+# rho is defined here so it can be used in the cost function 
+# but it is initialised in main with cfg.PARAMS
 rho = 1000.
 
 def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_profile=True):
@@ -96,6 +98,23 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
 def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
 	profile_cost=True, mb_cost=True, winter_mb_cost=True, doMean=False):
 
+	"""
+    A function to define misfit cost function
+
+    Parameters
+    ----------
+	mb_output:		an (Nx12)xM array where N=len(mb_output_years), M=no. of bands
+					each row is mean mb per band (in m/s) for a given month
+	mb_output_years:
+					the years FSM is run
+	wgms_data:		the dict from get_WGMS_data
+	areas, elevs: 	arrays from model flowline
+	profile_cost, mb_cost_winter_mb_cost: 
+					flags for cf terms
+	doMean: 		average mb series before finding misfit
+
+    """
+
     profile_misfit = None
     mb_misfit = None
     winter_mb_misfit = None 
@@ -113,7 +132,7 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
     	# interpolate to wgms_bands
         func = interp1d(elevs, mb_profile, bounds_error=False)
         mb_interp = func(.5*(wgms_data['mb_profile_lower']+wgms_data['mb_profile_upper']))
-    	# sum squared difference
+    	# RMSE of time-mean mb profile
         profile_misfit = np.sqrt(np.nanmean( (mb_interp-wgms_data['mb_profile_mwe'])**2 / wgms_data['mb_profile_mwe_unc']**2 ))
 
     if mb_cost:
@@ -122,6 +141,7 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
         mb_series = np.matmul(mb_annual, areas) # result is m3/s
         mb_series = mb_series * rho / 1000. * SEC_IN_YEAR / areas.sum() # result in mwe/yr
         if not doMean:
+			# RMSE of mass balance time series
             mb_misfit = np.sqrt( np.nanmean( (mb_series - wgms_data['mb_annual_mwe'])**2 / wgms_data['mb_annual_mwe_unc']**2 ) )
         else:
             mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_annual_mwe']) ) / wgms_data['mb_annual_mwe_unc'][0]
@@ -142,6 +162,7 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
         mb_series = mb_series * rho / 1000. * SEC_IN_YEAR / areas.sum() # result in mwe/yr
 
         if not doMean:
+			# RMSE of winter mass balance time series
             winter_mb_misfit = np.sqrt( np.nanmean( (mb_series - wgms_data['mb_winter_mwe'])**2 / wgms_data['mb_winter_mwe_unc']**2 ) )
         else:
             winter_mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_winter_mwe']) ) / wgms_data['mb_winter_mwe_unc'][0]
@@ -153,6 +174,7 @@ def main(cfg_path):
     # 1) Read configuration file
     # ----------------------
     cp = configparser.ConfigParser()
+	# option needed for case sensitivity
     cp.optionxform = str
     cp.read(cfg_path)
 
@@ -209,12 +231,17 @@ def main(cfg_path):
     sens_params = []
     sens_bounds = []
 
+	# the loop below is to be able to specify FSM parameters without explicitly codeing for them
+	# if they begin with "FSM_param_" they will be included in the FSM namelist
     for key in cpdict.keys():
         if (key[:10] == 'FSM_param_'):
 
             valstr = cpdict[key]
             val = json.loads(valstr)
 
+			# if the value of the param is a list (of length 2)
+			# then this parameter is used in the sensitivity analysis below
+			# and the list gives the range
             if isinstance(val,list):
                 cfg.PARAMS[key] = val[0]
                 sens_params.append(key)
@@ -277,7 +304,7 @@ def main(cfg_path):
     # Grab the raw string (or None if the key is missing)
     wgms_id = inp_config.getint('glacier_wgms_id', fallback=507)
 
-        # HEF: 491 summer bal non-nan 2013-2025
+    # HEF: 491 summer bal non-nan 2013-2025
     # KEF: 507 no summer bal
     # VER: 489 summer bal 1966 on!
     wgms_to_rgi = { 491: "RGI60-11.00897", 
@@ -329,6 +356,7 @@ def main(cfg_path):
     # 9) Parameter Sample Generation
     # ----------------------
 
+	# ProblemSpec is an SALib type that sets up an analysis
     sens_params
     fsm_sp = ProblemSpec({
         "names": sens_params,
@@ -337,7 +365,13 @@ def main(cfg_path):
         "outputs": ["CF"],
     })
 
-
+	# if the param sample filename not given or overwrite=true:
+	# -	We need to define the parameter sample, using sample_sobol
+	# - parameter sample saved to analysis.cv
+	# - cost funciton columns set to -1 (not calculated)
+	# otherwise
+	# - we read the param sample from the file specified
+	
     if (overwrite_sample_file) or (parameter_sample_file is None):
         fsm_sp.sample_sobol(num_sample, calc_second_order=True)
         sample_arr = fsm_sp.samples
@@ -353,7 +387,11 @@ def main(cfg_path):
         sample_arr = arr[:,:-3]
         results_arr = arr[:,-3:]
         fsm_sp.set_samples(sample_arr)
-        print ('restarting from file ' + parameter_sample_file)
+        print ('restarting from file ' + parameter_sample_file )
+
+	# Here we determine if we need to find values for the entire sample, or
+	#   if we can skip some. We find the first row that has not been processed,
+	#   i.e. with -1 in it. This is where we start the loop below.
 
     if len(np.where(results_arr[:,0]==-1)[0])==0:
         print('sample complete, no new results needed')
@@ -368,7 +406,8 @@ def main(cfg_path):
     # ----------------------
     # 10) Process wfde5 data
     # ----------------------
-    
+
+		# we only need to process w5de5 data if there are more samples to calculate
         workflow.execute_entity_task(process_wfde5_data, gdirs, y0=str(y0), y1=str(y1))
         print("DONE PROCESSING wfde5 data")
 
@@ -386,7 +425,7 @@ def main(cfg_path):
     
     years_compute = np.array([years_cost[0]-1] + years_cost)
 
-
+	# main loop for CF evaluation
     for isample in range(isample_start,sample_arr.shape[0]): 
         
         mb_output = None
@@ -395,7 +434,8 @@ def main(cfg_path):
             cfg.PARAMS[name] = sample_arr[isample, i]
 
         FactorialSnowpackModel.create_nml(reset=False)
-            
+
+		# loop to run FSM for each year, and stack results
         for i, year in enumerate(years_compute):    
             mb_year = mb_model.get_mb(heights=fls[0].surface_h, year=year, fls=fls, reset_state=True, monthly=True)
             if mb_output is None:
@@ -403,23 +443,25 @@ def main(cfg_path):
             else:
                 mb_output = np.vstack((mb_output,mb_year))
 
+		# evaluation cost functions for row and store them
         profile_err, mb_err, wmb_err = get_cost(mb_output, years_compute, wgms_dict, areas, elevs)
         results_arr[isample,:] = [profile_err, mb_err, wmb_err]
 
+		# notify every 10 steps, save progress to file every 100 steps
         if (np.mod(isample,10)==0):
             print (str(isample) + ' samples done')
         if (np.mod(isample,100)==0):
             sample_results_arr = np.hstack((sample_arr,results_arr))
             pd.DataFrame(data=sample_results_arr, columns=sens_params+['cost_profile','cost_mb','cost_wmb']).to_csv(parameter_sample_file)
 
-
+	
     sample_results_arr = np.hstack((sample_arr,results_arr))
     pd.DataFrame(data=sample_results_arr, columns=sens_params+['cost_profile','cost_mb','cost_wmb']).to_csv(parameter_sample_file)
     print("DONE WITH SAMPLE")
 
-    # ----------------------
-    # 12) Analyse 
-    # ----------------------
+    # -----------------------------------------
+    # 12) Sobol Analysis for each cost function
+    # -----------------------------------------
 
     strs = ['profile cost','mb cost','winter mb cost']
 
@@ -436,13 +478,6 @@ def main(cfg_path):
     fsm_sp.set_results(results_arr.sum(axis=1))
     fsm_sp.analyze_sobol()
     print(fsm_sp)
-
-
-
-
- 
-
-
 
 
 
