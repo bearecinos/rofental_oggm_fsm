@@ -275,7 +275,7 @@ def main(cfg_path):
     rof_sel = rof_sel.sort_values('Area', ascending=False)
 
     # Grab the raw string (or None if the key is missing)
-    wgms_id = inp_config.get('glacier_wgms_id', fallback=491)
+    wgms_id = inp_config.getint('glacier_wgms_id', fallback=491)
 
         # HEF: 491 summer bal non-nan 2013-2025
     # KEF: 507 no summer bal
@@ -451,3 +451,4 @@ if __name__ == '__main__':
         print("Usage: python test_fsm_rofental.py <config.ini>")
         sys.exit(1)
     main(sys.argv[1])
+
