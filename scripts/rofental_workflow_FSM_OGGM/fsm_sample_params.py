@@ -122,7 +122,7 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
         mb_series = np.matmul(mb_annual, areas) # result is m3/s
         mb_series = mb_series * rho / 1000. * SEC_IN_YEAR / areas.sum() # result in mwe/yr
         if not doMean:
-            mb_misfit = np.sqrt(( (mb_series - wgms_data['mb_annual_mwe'])**2 / wgms_data['mb_annual_mwe_unc']**2 ).mean())
+            mb_misfit = np.sqrt( np.nanmean( (mb_series - wgms_data['mb_annual_mwe'])**2 / wgms_data['mb_annual_mwe_unc']**2 ) )
         else:
             mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_annual_mwe']) ) / wgms_data['mb_annual_mwe_unc'][0]
 
