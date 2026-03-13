@@ -98,26 +98,26 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
 def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
 	profile_cost=True, mb_cost=True, winter_mb_cost=True, doMean=False):
 
-	"""
+    """
     A function to define misfit cost function
 
     Parameters
     ----------
-	mb_output:		an (Nx12)xM array where N=len(mb_output_years), M=no. of bands
-					each row is mean mb per band (in m/s) for a given month
-	mb_output_years:
-					the years FSM is run
-	wgms_data:		the dict from get_WGMS_data
-	areas, elevs: 	arrays from model flowline
-	profile_cost, mb_cost_winter_mb_cost: 
-					flags for cf terms
-	doMean: 		average mb series before finding misfit
+    mb_output:		an (Nx12)xM array where N=len(mb_output_years), M=no. of bands
+    				each row is mean mb per band (in m/s) for a given month
+    mb_output_years:
+    				the years FSM is run
+    wgms_data:		the dict from get_WGMS_data
+    areas, elevs: 	arrays from model flowline
+    profile_cost, mb_cost_winter_mb_cost: 
+    				flags for cf terms
+    doMean: 		average mb series before finding misfit
 
     """
 
     profile_misfit = None
     mb_misfit = None
-    winter_mb_misfit = None 
+    winter_mb_misfit = None
 
     mb_output_mon = np.repeat(mb_output_years,12)
 
@@ -160,6 +160,7 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
 
         mb_series = np.matmul(mb_winter, areas) # result is m3/s
         mb_series = mb_series * rho / 1000. * SEC_IN_YEAR / areas.sum() # result in mwe/yr
+
 
         if not doMean:
 			# RMSE of winter mass balance time series
