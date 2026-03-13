@@ -5,7 +5,6 @@ import xarray as xr
 from oggm import cfg, utils, workflow, tasks
 from oggm.sandbox import distribute_2d
 from FSM_oggm_MB import FactorialSnowpackModel, process_wfde5_data, fsm_flowline_model_run
-from IPython import embed
 
 
 def main(cfg_path):
