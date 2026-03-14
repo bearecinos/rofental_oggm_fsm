@@ -12,6 +12,7 @@ from SALib import ProblemSpec
 from scipy.interpolate import interp1d
 
 
+
 from oggm.cfg import SEC_IN_YEAR
 # rho is defined here so it can be used in the cost function 
 # but it is initialised in main with cfg.PARAMS
@@ -43,6 +44,11 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
         bal_unc = df['annual_balance_unc'].values # mwe
         winter_bal = df['winter_balance'].values # mwe
         winter_bal_unc = df['winter_balance_unc'].values # mwe
+
+        # there might be empty uncertainties. Since may unc's are 0.1 mwe, 
+        # we will use this so we don't discount years with data
+        bal_unc[np.isnan(bal_unc)] = 0.1
+        winter_bal_unc[np.isnan(winter_bal_unc)] = 0.1
 
     if get_profile:
         assert years[0]>1965, "earlier years have inconsistent bands"
@@ -78,6 +84,7 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
             mb_profile_unc= np.sqrt(mb_profile_unc / unc_nonnan)
         else:
             mb_profile_unc[:] = 0.05
+
 
     return_dict['mb_years'] = years
 
@@ -303,7 +310,7 @@ def main(cfg_path):
     rof_sel = rof_sel.sort_values('Area', ascending=False)
 
     # Grab the raw string (or None if the key is missing)
-    wgms_id = inp_config.getint('glacier_wgms_id', fallback=507)
+    wgms_id = inp_config.getint('glacier_wgms_id', fallback=491)
 
     # HEF: 491 summer bal non-nan 2013-2025
     # KEF: 507 no summer bal
