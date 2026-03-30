@@ -11,7 +11,22 @@ import pandas as pd
 from SALib import ProblemSpec
 from scipy.interpolate import interp1d
 
+used_keys={}
 
+def cfg_get(config_section, option, fallback=None):
+    val = config_section.get(option,fallback=fallback)
+    used_keys.setdefault(config_section._name, {})[option] = str(val)
+    return val
+
+def cfg_getint(config_section, option, fallback=None):
+    val = config_section.getint(option,fallback=fallback)
+    used_keys.setdefault(config_section._name, {})[option] = str(val)
+    return val
+
+def cfg_getboolean(config_section, option, fallback=None):
+    val = config_section.getboolean(option,fallback=fallback)
+    used_keys.setdefault(config_section._name, {})[option] = str(val)
+    return val
 
 from oggm.cfg import SEC_IN_YEAR
 # rho is defined here so it can be used in the cost function 
@@ -103,7 +118,7 @@ def get_WGMS_data(path, years, glac_id, get_mb=True, get_winter_mb=True, get_pro
     return return_dict
 
 def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
-	profile_cost=True, mb_cost=True, winter_mb_cost=True, doMean=False):
+	profile_cost=True, mb_cost=True, winter_mb_cost=True, doMean=False, make_plots=False):
 
     """
     A function to define misfit cost function
@@ -119,12 +134,17 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
     profile_cost, mb_cost_winter_mb_cost: 
     				flags for cf terms
     doMean: 		average mb series before finding misfit
+    make_plots:         print comparison plots
 
     """
 
     profile_misfit = None
     mb_misfit = None
     winter_mb_misfit = None
+
+    if make_plots:
+        import matplotlib.pyplot as plt
+        f, axs = plt.subplots(1, 3, figsize=(12, 4))
 
     mb_output_mon = np.repeat(mb_output_years,12)
 
@@ -142,6 +162,11 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
     	# RMSE of time-mean mb profile
         profile_misfit = np.sqrt(np.nanmean( (mb_interp-wgms_data['mb_profile_mwe'])**2 / wgms_data['mb_profile_mwe_unc']**2 ))
 
+        if make_plots:
+            axs[0].plot(mb_interp,.5*(wgms_data['mb_profile_lower']+wgms_data['mb_profile_upper']),label='FSM')
+            axs[0].plot(wgms_data['mb_profile_mwe'],.5*(wgms_data['mb_profile_lower']+wgms_data['mb_profile_upper']),label='WGMS')
+            axs[0].legend()
+
     if mb_cost:
 
         mb_annual = (mb_output[inds,:]).reshape(-1,12,mb_output.shape[1]).mean(axis=1) # result is in m/s
@@ -152,6 +177,11 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
             mb_misfit = np.sqrt( np.nanmean( (mb_series - wgms_data['mb_annual_mwe'])**2 / wgms_data['mb_annual_mwe_unc']**2 ) )
         else:
             mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_annual_mwe']) ) / wgms_data['mb_annual_mwe_unc'][0]
+
+        if make_plots:
+            axs[1].plot(wgms_data['mb_years'],mb_series,label='FSM')
+            axs[1].plot(wgms_data['mb_years'],wgms_data['mb_annual_mwe'],label='WGMS')
+            axs[1].legend()
 
     if winter_mb_cost:
 
@@ -174,6 +204,11 @@ def get_cost(mb_output, mb_output_years, wgms_data, areas, elevs, \
             winter_mb_misfit = np.sqrt( np.nanmean( (mb_series - wgms_data['mb_winter_mwe'])**2 / wgms_data['mb_winter_mwe_unc']**2 ) )
         else:
             winter_mb_misfit =  np.abs(  mb_series.mean() - np.mean(wgms_data['mb_winter_mwe']) ) / wgms_data['mb_winter_mwe_unc'][0]
+
+        if make_plots:
+            axs[2].plot(wgms_data['mb_years'],mb_series,label='FSM')
+            axs[2].plot(wgms_data['mb_years'],wgms_data['mb_winter_mwe'],label='WGMS')
+            axs[2].legend()
 	
     return profile_misfit, mb_misfit, winter_mb_misfit
 
@@ -191,12 +226,13 @@ def main(cfg_path):
     fsm_config  = cp['FSM_OGGM']
     inp_config  = cp['InputData']
     outp_config = cp['Output']
+
  
     # ----------------------
     # 2) Parse general settings
     # ----------------------
-    working_dir = gen_config.get('working_dir')          # string, may be blank
-    reset       = gen_config.getboolean('reset')         # bool
+    working_dir = cfg_get(gen_config,'working_dir')          # string, may be blank
+    reset       = cfg_getboolean(gen_config,'reset')         # bool
 
     # ----------------------
     # 3) Initialize OGGM core
@@ -221,18 +257,19 @@ def main(cfg_path):
     # ----------------------
     # 4) OGGM parameters
     # ----------------------
-    cfg.PARAMS['use_multiprocessing'] = oggm_config.getboolean('use_multiprocessing')
-    cfg.PARAMS['mp_processes']        = oggm_config.getint('mp_processes')
-    cfg.PARAMS['border']              = oggm_config.getint('border', fallback=80)
+    cfg.PARAMS['use_multiprocessing'] = cfg_getboolean(oggm_config,'use_multiprocessing')
+    cfg.PARAMS['mp_processes']        = cfg_getint(oggm_config,'mp_processes')
+    cfg.PARAMS['border']              = cfg_getint(oggm_config,'border', fallback=80)
 
     # ----------------------
     # 5) FSM parameters
     # ----------------------
-    cfg.PARAMS['FSM_save_runoff']        = fsm_config.getboolean('FSM_save_runoff',fallback=True)
-    cfg.PARAMS['FSM_runoff_frequency']   = fsm_config.get('FSM_runoff_frequency',fallback='D')
-    cfg.PARAMS['FSM_spinup']             = fsm_config.getboolean('FSM_spinup',fallback=True)
-    cfg.PARAMS['FSM_interpolate_bnds']   = fsm_config.getboolean('FSM_interpolate_bnds',fallback=False) # note: nbnds can only be set if interpolate_bnds is True
-    cfg.PARAMS['FSM_Nbnds']              = fsm_config.getint('FSM_Nbnds',fallback=None)
+    cfg.PARAMS['FSM_save_runoff']        = cfg_getboolean(fsm_config,'FSM_save_runoff',fallback=True)
+    cfg.PARAMS['FSM_runoff_frequency']   = cfg_get(fsm_config,'FSM_runoff_frequency',fallback='D')
+    cfg.PARAMS['FSM_spinup']             = cfg_getboolean(fsm_config,'FSM_spinup',fallback=True)
+    cfg.PARAMS['FSM_interpolate_bnds']   = cfg_getboolean(fsm_config,'FSM_interpolate_bnds',fallback=False) # note: nbnds can only be set if interpolate_bnds is True
+    cfg.PARAMS['FSM_Nbnds']              = cfg_getint(fsm_config,'FSM_Nbnds',fallback=None)
+
 
     # important: parameters for namelist must start with "FSM_param_"
     cpdict = dict(fsm_config)
@@ -246,6 +283,8 @@ def main(cfg_path):
 
             valstr = cpdict[key]
             val = json.loads(valstr)
+            # ensure these appear in default ini file
+            used_keys.setdefault(fsm_config._name, {})[key] = 'None'
 
 			# if the value of the param is a list (of length 2)
 			# then this parameter is used in the sensitivity analysis below
@@ -257,7 +296,7 @@ def main(cfg_path):
             else:
                 cfg.PARAMS[key] = val
 
-    oggm_fsm_path                        = fsm_config.get('FSM-OGGM_path')
+    oggm_fsm_path                        = cfg_get(fsm_config,'FSM-OGGM_path')
     sys.path.append(oggm_fsm_path)
     from FSM_oggm_MB import FactorialSnowpackModel, process_wfde5_data
 
@@ -267,21 +306,29 @@ def main(cfg_path):
     # ----------------------
     # 6) Climate & I/O paths
     # ----------------------
-    cfg.PATHS['climate_file']   = inp_config.get('climate_file')
+    cfg.PATHS['climate_file']   = cfg_get(inp_config,'climate_file')
     cfg.PARAMS['baseline_climate'] = 'CUSTOM'
-    catchment_path = inp_config.get('catchment_path')
-    wgms_path = inp_config.get('wgms_path')
-    parameter_sample_file = inp_config.get('parameter_sample_file',fallback=None)
-    overwrite_sample_file = inp_config.getboolean('overwrite_sample',fallback=False)
+    catchment_path = cfg_get(inp_config,'catchment_path')
+    wgms_path = cfg_get(inp_config,'wgms_path')
+    parameter_sample_file = cfg_get(inp_config,'parameter_sample_file',fallback=None)
+    overwrite_sample_file = cfg_getboolean(inp_config,'overwrite_sample_file',fallback=False)
 
     # ----------------------
     # 7) OGGM run setup
     # ----------------------
-    y0 = inp_config.getint('y0')
-    y1 = inp_config.getint('y1')
-    num_sample = inp_config.getint('num_samples',fallback=100)
-    years_cost = json.loads(inp_config.get('years_cost'))
-    simulation_name = outp_config.get('simulation_name')
+    y0 = cfg_getint(inp_config,'y0')
+    y1 = cfg_getint(inp_config,'y1')
+    num_sample = cfg_getint(inp_config,'num_samples',fallback=100)
+
+    # for glacier wide MB and Winter MB, error is based on difference in mean
+    doMean = cfg_getboolean(inp_config,'calibrate_to_mean',fallback=False)
+
+    # this is a facility to, rather than run a large sample, plot the results
+    # from a single sample. the input is the index of the sample array to run.
+    # it is most useful if one has already run a large sample.
+    one_off_sample = cfg_getint(inp_config,'one_off_sample',fallback=None)
+    years_cost = json.loads(cfg_get(inp_config,'years_cost'))
+    simulation_name = cfg_get(outp_config,'simulation_name')
 
     # “Always-on” OGGM flags
     cfg.PARAMS['continue_on_error'] = True
@@ -310,7 +357,12 @@ def main(cfg_path):
     rof_sel = rof_sel.sort_values('Area', ascending=False)
 
     # Grab the raw string (or None if the key is missing)
-    wgms_id = inp_config.getint('glacier_wgms_id', fallback=491)
+    wgms_id = cfg_getint(inp_config,'glacier_wgms_id', fallback=491)
+
+    configOut = configparser.ConfigParser()
+    configOut.read_dict(used_keys)
+    with open('used_params.ini', 'w') as f:
+        configOut.write(f)
 
     # HEF: 491 summer bal non-nan 2013-2025
     # KEF: 507 no summer bal
@@ -358,7 +410,7 @@ def main(cfg_path):
     gdir = gdirs[0]
     with xr.open_dataset(gdir.get_filepath('gridded_data')) as ds:
         ds = ds.load()
-        assert len(ds.count().variables.keys()) == 21
+        #assert len(ds.count().variables.keys()) == 21
 
     # ----------------------
     # 9) Parameter Sample Generation
@@ -379,6 +431,7 @@ def main(cfg_path):
 	# - cost funciton columns set to -1 (not calculated)
 	# otherwise
 	# - we read the param sample from the file specified
+
 	
     if (overwrite_sample_file) or (parameter_sample_file is None):
         fsm_sp.sample_sobol(num_sample, calc_second_order=True)
@@ -397,11 +450,20 @@ def main(cfg_path):
         fsm_sp.set_samples(sample_arr)
         print ('restarting from file ' + parameter_sample_file )
 
+        # if there is a one-off sample to be run, assert that the one_off_sample
+        # is not larger than the sample array
+
+    if one_off_sample is not None:
+       assert one_off_sample <= sample_arr.shape[0], "one_off_sample value too large"
+
 	# Here we determine if we need to find values for the entire sample, or
 	#   if we can skip some. We find the first row that has not been processed,
 	#   i.e. with -1 in it. This is where we start the loop below.
 
-    if len(np.where(results_arr[:,0]==-1)[0])==0:
+    if one_off_sample is not None:
+        print('one off sample, will not generate new sample results')
+        isample_start = sample_arr.shape[0]
+    elif len(np.where(results_arr[:,0]==-1)[0])==0:
         print('sample complete, no new results needed')
         isample_start = sample_arr.shape[0]
     else:
@@ -416,6 +478,7 @@ def main(cfg_path):
     # ----------------------
 
 		# we only need to process w5de5 data if there are more samples to calculate
+    if (isample_start < sample_arr.shape[0]) or one_off_sample is not None:
         workflow.execute_entity_task(process_wfde5_data, gdirs, y0=str(y0), y1=str(y1))
         print("DONE PROCESSING wfde5 data")
 
@@ -432,6 +495,32 @@ def main(cfg_path):
     wgms_dict = get_WGMS_data(wgms_path, years_cost, wgms_id)
     
     years_compute = np.array([years_cost[0]-1] + years_cost)
+
+    # do one-off and then return
+    if one_off_sample is not None:
+
+        for i, name in enumerate(sens_params):
+            cfg.PARAMS[name] = sample_arr[one_off_sample, i]
+
+        FactorialSnowpackModel.create_nml(reset=False)
+
+        mb_output = None
+
+        # loop to run FSM for each year, and stack results
+        for i, year in enumerate(years_compute):
+            mb_year = mb_model.get_mb(heights=fls[0].surface_h, year=year, fls=fls, reset_state=True, monthly=True)
+            if mb_output is None:
+                mb_output = mb_year
+            else:
+                mb_output = np.vstack((mb_output,mb_year))
+
+                # evaluation cost functions for row and store them
+        profile_err, mb_err, wmb_err = get_cost(mb_output, years_compute, wgms_dict, areas, elevs, make_plots=True, doMean=doMean)
+
+        import matplotlib.pyplot as plt
+        plt.show()
+
+        return
 
 	# main loop for CF evaluation
     for isample in range(isample_start,sample_arr.shape[0]): 
@@ -452,7 +541,7 @@ def main(cfg_path):
                 mb_output = np.vstack((mb_output,mb_year))
 
 		# evaluation cost functions for row and store them
-        profile_err, mb_err, wmb_err = get_cost(mb_output, years_compute, wgms_dict, areas, elevs)
+        profile_err, mb_err, wmb_err = get_cost(mb_output, years_compute, wgms_dict, areas, elevs, doMean=doMean)
         results_arr[isample,:] = [profile_err, mb_err, wmb_err]
 
 		# notify every 10 steps, save progress to file every 100 steps
