@@ -1,0 +1,156 @@
+import numpy as np
+import pandas as pd
+from IPython import embed
+import sys
+import configparser
+import subprocess
+import re
+import matplotlib.pyplot as plt
+
+
+def main(cfg_path):
+
+    cp = configparser.ConfigParser()
+    # option needed for case sensitivity
+    cp.optionxform = str
+    cp.read(cfg_path)
+
+    inp_config  = cp['InputData']
+    
+    wgms_to_rgi_path = inp_config.get('wgms_to_rgi_path',fallback=None)
+    wgms_id = inp_config.getint('glacier_wgms_id',fallback=None)
+    parameter_sample_file_base = inp_config.get('parameter_sample_file_base',fallback=None)
+
+    dfwr = pd.read_csv(wgms_to_rgi_path)
+    rgi_id = dfwr[dfwr.WGMS_ID == wgms_id].RGI60_ID.tolist()[0]
+    analysis_csv = parameter_sample_file_base + '_' + rgi_id + '.csv'
+    
+    dfsample = pd.read_csv(analysis_csv,index_col=0)
+    arr = dfsample.to_numpy()
+    sample_arr = arr[:,:-3]
+    results_arr = arr[:,-3:]
+    param_names = dfsample.keys()[:-3]
+    n_params = len(param_names)
+    cost = np.nansum(results_arr,1)[:,None]
+    
+    with open("params_dan.ini", "r") as f:
+        lines = f.readlines()
+    with open("params_dan_" + str(wgms_id) + ".ini", "w") as f:
+        for line in lines:
+            line = re.sub(r'^.*glacier_wgms_id.*$', 'glacier_wgms_id = ' + str(wgms_id) + '\n', line)
+            f.write(line)
+    
+    with open("params_dan.ini", "r") as f:
+        lines = f.readlines()        
+    with open("params_dan_" + str(wgms_id) + ".ini", "w") as f:
+        for line in lines:            
+            line = re.sub(r'^.*one_off_sample.*$', 'one_off_sample = -1\n', line)
+            f.write(line)
+    
+    with open("params_dan.ini", "r") as f:
+        lines = f.readlines()
+    with open("params_dan_" + str(wgms_id) + ".ini", "w") as f:          
+        for line in lines:     
+            line = re.sub(r'^.*overwrite_sample_file.*$', 'overwrite_sample_file = False\n', line)
+            f.write(line)
+
+    stdout_file = open('stdout_' + str(wgms_id), 'w')
+    stderr_file = open('stderr_' + str(wgms_id), 'w')
+    proc = subprocess.Popen(["python", "fsm_sample_params.py", "params_dan_" + str(wgms_id) + ".ini"], \
+                stdout=stdout_file, stderr=stderr_file)
+    
+    prob = np.exp(-.5*cost**2)/np.sum(np.exp(-.5*cost**2));  # use a gaussian probability -- not sure what else to do
+    #prob = 1/cost/np.sum(1/cost)
+    prob = np.exp(-cost) / np.sum(np.exp(-cost))
+    probTensor = prob[:,:,None]
+    
+    cdf = np.cumsum(np.sort(prob)[::-1]);
+    
+    mean_param = np.sum(prob * sample_arr,0)
+    cov_param = np.sum((sample_arr-mean_param)[:,:,None]*(sample_arr-mean_param)[:,None,:]*probTensor,0)
+    
+    
+    sds = np.sqrt(cov_param.diagonal())
+    
+    sds_outer = sds[:,None]*sds[:,None].T
+    corr_param = cov_param / sds_outer
+    
+    eival, ev = np.linalg.eig(cov_param)
+    sort_ind = np.argsort(eival)[::-1]
+    eival = eival[sort_ind]
+    ev = ev[:,sort_ind]
+    num_ev = len(np.where(eival/max(eival)>.1)[0])
+    
+    fig, axes = plt.subplots(n_params, n_params, figsize=(14, 14))
+    
+    bins=30
+    cmap = 'viridis'
+    for i in range(n_params):
+        for j in range(n_params):
+            ax = axes[i, j]
+
+            if i == j:
+                # Diagonal: weighted histogram
+                ax.hist(
+                    sample_arr[:, j],
+                    bins=bins,
+                    weights=prob.flatten(),
+                    density=True,
+                    color="steelblue",
+                    alpha=0.8
+                )
+                
+                text_str = f"{mean_param[j]:.3f} ± {sds[j]:.3f}"
+                ax.text(
+                    0.05, 0.9,
+                    text_str,
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    verticalalignment='top',
+                    bbox=dict(boxstyle="round", facecolor="white", alpha=0.7)
+                )
+                ax.tick_params(axis='x', labelbottom=True)
+                
+            elif i<j:
+                # Off-diagonal: weighted 2D histogram
+                h = ax.hist2d(
+                    sample_arr[:, j],
+                    sample_arr[:, i],
+                    bins=bins,
+                    weights=prob.flatten(),
+                    cmap=cmap
+                )
+                
+            else:
+                # Lower triangle: covariance text
+                corr_ij = corr_param[i, j]
+                ax.text(
+                    0.5, 0.5,
+                    f"{corr_ij:.3f}",
+                    ha="center",
+                    va="center",
+                    fontsize=11
+                )
+                ax.set_xticks([])
+                ax.set_yticks([])
+                
+            if i == n_params - 1:
+                ax.set_xlabel(param_names[j])
+            
+
+            if j == 0:
+                ax.set_ylabel(param_names[i])
+            else:
+                ax.set_yticks([])
+    plt.savefig('pair_plot_' + str(wgms_id) + '.png')
+    proc.wait()
+    stdout_file.close()
+    stderr_file.close()
+    
+
+if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        print("Usage: python analyse_wgms_params.py <paramfile>")
+        sys.exit(1)
+    main(sys.argv[1])
+
