@@ -333,8 +333,6 @@ def main(cfg_path):
     wgms_to_rgi_path = cfg_get(inp_config,'wgms_to_rgi_path',fallback=None)
     # base name of the csv file that contains param samples and costs
     parameter_sample_file_base = cfg_get(inp_config,'parameter_sample_file_base',fallback=None)
-    # Only set to true if there are no values already saved in the target file
-    overwrite_sample_file = cfg_getboolean(inp_config,'overwrite_sample_file',fallback=False)
 
     # ----------------------
     # 7) OGGM run setup
@@ -353,6 +351,11 @@ def main(cfg_path):
     #    -1: use the row corresponding to minimum total cost
     #    -2: use the values in the .ini file
     one_off_sample = cfg_getint(inp_config,'one_off_sample',fallback=None)
+    # Only set to true if there are no values already saved in the target file
+    # set to false if one_off_sample is not None
+    overwrite_sample_file = cfg_getboolean(inp_config,'overwrite_sample_file',fallback=False)
+    if one_off_sample is not None:
+        overwrite_sample_file = False
     years_cost = json.loads(cfg_get(inp_config,'years_cost'))
     simulation_name = cfg_get(outp_config,'simulation_name')
 

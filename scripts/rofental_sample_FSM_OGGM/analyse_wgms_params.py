@@ -56,7 +56,7 @@ def main(cfg_path):
 
     stdout_file = open('stdout_' + str(wgms_id), 'w')
     stderr_file = open('stderr_' + str(wgms_id), 'w')
-    proc = subprocess.Popen(["python", "fsm_sample_params.py", "params_dan_" + str(wgms_id) + ".ini"], \
+    proc = subprocess.Popen(["python", "fsm_sample_params.py", cfg_path], \
                 stdout=stdout_file, stderr=stderr_file)
     
     prob = np.exp(-.5*cost**2)/np.sum(np.exp(-.5*cost**2));  # use a gaussian probability -- not sure what else to do
@@ -146,7 +146,42 @@ def main(cfg_path):
     proc.wait()
     stdout_file.close()
     stderr_file.close()
-    
+
+
+    original_file = cfg_path
+    strs = cfg_path.split('.')
+    new_file = strs[0] + '_' + str(wgms_id) + 'opt.' + strs[1]
+
+    with open(original_file, 'r') as file:
+        lines = file.readlines()
+
+    # Modify lines with square brackets
+    modified_lines = []
+    for line in lines:
+        # Check if the line contains square brackets
+        if '[' in line and ']' in line:
+            # Use regular expression to find the first number in brackets
+            match = re.search(r'\[(\d+(?:\.\d+)?)', line)
+            strs = line.split('=')
+            parmname = strs[0].strip()
+            print (parmname)
+            if (parmname[:10]=='FSM_param_') & (match is not None):
+                # Extract the string before the equal sign, the string before brackets, and the original line
+                new_value = mean_param[np.where(param_names==parmname)[0][0]]
+
+                original_line = line
+                new_line = re.sub(r'\[(\d+\.\d+|\d+),', f'[{new_value},', line, count=1)
+                modified_lines.append(new_line)
+            else:
+                modified_lines.append(line)  # If no match, append the original line
+        else:
+            modified_lines.append(line) 
+
+    with open(new_file, 'w') as file:
+        file.writelines(modified_lines)
+
+    print(f"Mean values saved to {new_file}") 
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
