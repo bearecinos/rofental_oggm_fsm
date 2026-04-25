@@ -164,7 +164,6 @@ def main(cfg_path):
             match = re.search(r'\[(\d+(?:\.\d+)?)', line)
             strs = line.split('=')
             parmname = strs[0].strip()
-            print (parmname)
             if (parmname[:10]=='FSM_param_') & (match is not None):
                 # Extract the string before the equal sign, the string before brackets, and the original line
                 new_value = mean_param[np.where(param_names==parmname)[0][0]]
