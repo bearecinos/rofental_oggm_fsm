@@ -6,6 +6,7 @@ import configparser
 import subprocess
 import re
 import matplotlib.pyplot as plt
+import json
 
 
 def main(cfg_path):
@@ -21,6 +22,9 @@ def main(cfg_path):
     wgms_id = inp_config.getint('glacier_wgms_id',fallback=None)
     parameter_sample_file_base = inp_config.get('parameter_sample_file_base',fallback=None)
 
+    costwgt_str = inp_config.get('cost_variance_expansion',fallback=None)
+    cost_wgts = np.array(json.loads(costwgt_str))
+
     dfwr = pd.read_csv(wgms_to_rgi_path)
     rgi_id = dfwr[dfwr.WGMS_ID == wgms_id].RGI60_ID.tolist()[0]
     analysis_csv = parameter_sample_file_base + '_' + rgi_id + '.csv'
@@ -31,7 +35,7 @@ def main(cfg_path):
     results_arr = arr[:,-3:]
     param_names = dfsample.keys()[:-3]
     n_params = len(param_names)
-    cost = np.nansum(results_arr,1)[:,None]
+    cost = np.sqrt(np.nansum((1/cost_wgts[None,:]**2) * results_arr**2,1)[:,None])
     
     with open("params_dan.ini", "r") as f:
         lines = f.readlines()
@@ -59,9 +63,8 @@ def main(cfg_path):
     proc = subprocess.Popen(["python", "fsm_sample_params.py", cfg_path], \
                 stdout=stdout_file, stderr=stderr_file)
     
-    prob = np.exp(-.5*cost**2)/np.sum(np.exp(-.5*cost**2));  # use a gaussian probability -- not sure what else to do
-    #prob = 1/cost/np.sum(1/cost)
-    prob = np.exp(-cost) / np.sum(np.exp(-cost))
+    prob = np.exp(-.5*cost)/np.sum(np.exp(-.5*cost));  # use a gaussian probability -- not sure what else to do
+
     probTensor = prob[:,:,None]
     
     cdf = np.cumsum(np.sort(prob)[::-1]);
