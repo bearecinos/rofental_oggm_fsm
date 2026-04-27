@@ -359,6 +359,12 @@ def main(cfg_path):
     years_cost = json.loads(cfg_get(inp_config,'years_cost'))
     simulation_name = cfg_get(outp_config,'simulation_name')
 
+    # array of "cost variance expansion" which provides a way to adjust the observational errors
+    # from those coming from WGMS -- and the cost is then calculated consistently with 
+    # the analysis script for a one off sample
+    costwgt_str = inp_config.get('cost_variance_expansion',fallback=None)
+    cost_wgts = np.array(json.loads(costwgt_str))
+
     # “Always-on” OGGM flags
     cfg.PARAMS['continue_on_error'] = True
     cfg.PARAMS['use_compression'] = True
@@ -533,7 +539,7 @@ def main(cfg_path):
     if one_off_sample is not None:
 
         if one_off_sample == -1:
-            sum_results = np.nansum(results_arr,1)
+            sum_results = np.nansum((1/cost_wgts[None,:]**2) * results_arr**2,1)
             assert np.min(results_arr[:,0]) != -1, "sampling unfinished"
             one_off_sample = np.argmin(sum_results)
 
