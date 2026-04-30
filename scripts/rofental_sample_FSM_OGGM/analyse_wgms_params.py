@@ -7,6 +7,7 @@ import subprocess
 import re
 import matplotlib.pyplot as plt
 import json
+import pickle as pkl
 
 
 def main(cfg_path):
@@ -81,8 +82,17 @@ def main(cfg_path):
     eival, ev = np.linalg.eig(cov_param)
     sort_ind = np.argsort(eival)[::-1]
     eival = eival[sort_ind]
-    ev = ev[:,sort_ind]
-    num_ev = len(np.where(eival/max(eival)>.1)[0])
+
+    statsdict = {
+	"mean": mean_param,
+        "corr": corr_param,
+        "cov": cov_param,
+        "eigenvalues": eival,
+        "eigenvectors": ev
+    }
+    fdump = open('stats_analysis_' + str(wgms_id) + '.pkl','wb')
+    pkl.dump(statsdict,fdump)
+    fdump.close()
     
     fig, axes = plt.subplots(n_params, n_params, figsize=(14, 14))
     
