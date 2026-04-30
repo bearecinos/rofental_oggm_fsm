@@ -63,7 +63,7 @@ def main(cfg_path):
     proc = subprocess.Popen(["python", "fsm_sample_params.py", cfg_path], \
                 stdout=stdout_file, stderr=stderr_file)
     
-    prob = np.exp(-.5*cost)/np.sum(np.exp(-.5*cost));  # use a gaussian probability -- not sure what else to do
+    prob = np.exp(-.5*cost**2)/np.sum(np.exp(-.5*cost**2));  # use a gaussian probability -- not sure what else to do
 
     probTensor = prob[:,:,None]
     
