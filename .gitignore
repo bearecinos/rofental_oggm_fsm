@@ -1,7 +1,6 @@
 dev_notebooks
 input
-output
-output_dailyTIM
+output*
 plots
 .idea
 tools/__pycache__/
