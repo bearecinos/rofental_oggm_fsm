@@ -23,7 +23,7 @@ def main(cfg_path):
     wgms_id = inp_config.getint('glacier_wgms_id',fallback=None)
     parameter_sample_file_base = inp_config.get('parameter_sample_file_base',fallback=None)
 
-    costwgt_str = inp_config.get('cost_variance_expansion',fallback=None)
+    costwgt_str = inp_config.get('cost_variance_expansion',fallback='[1,1,1]')
     cost_wgts = np.array(json.loads(costwgt_str))
 
     dfwr = pd.read_csv(wgms_to_rgi_path)

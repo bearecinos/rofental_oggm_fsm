@@ -362,7 +362,7 @@ def main(cfg_path):
     # array of "cost variance expansion" which provides a way to adjust the observational errors
     # from those coming from WGMS -- and the cost is then calculated consistently with 
     # the analysis script for a one off sample
-    costwgt_str = inp_config.get('cost_variance_expansion',fallback=None)
+    costwgt_str = inp_config.get('cost_variance_expansion',fallback='[1,1,1]')
     cost_wgts = np.array(json.loads(costwgt_str))
 
     # “Always-on” OGGM flags
