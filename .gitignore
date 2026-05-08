@@ -1,6 +1,6 @@
 dev_notebooks
 input
-output
+output*
 plots
 .idea
 tools/__pycache__/
